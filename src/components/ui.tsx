@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { X } from 'lucide-react'
 import { cx } from '../lib/cx'
 
 export function PageHeader({
@@ -107,5 +108,83 @@ export function Chip({
 export function Disclaimer({ children }: { children: ReactNode }) {
   return (
     <p className="rounded-xl bg-canvas px-4 py-3 text-xs leading-relaxed text-ink-faint">{children}</p>
+  )
+}
+
+export function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon: ReactNode
+  title: string
+  body?: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center p-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas text-ink-faint">
+        {icon}
+      </div>
+      <p className="mt-3 font-semibold text-ink">{title}</p>
+      {body && <p className="mt-1 max-w-sm text-sm text-ink-soft">{body}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  )
+}
+
+/**
+ * Accessible modal: labelled dialog, Escape to close, focus moves into the
+ * panel on open and returns to the trigger on close.
+ */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  children: ReactNode
+}) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      previouslyFocused?.focus()
+    }
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden />
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg animate-fade-in rounded-3xl bg-surface p-6 shadow-lift outline-none"
+      >
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+          aria-label="Close dialog"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <h3 className="section-title pr-8 text-lg font-semibold">{title}</h3>
+        {children}
+      </div>
+    </div>
   )
 }

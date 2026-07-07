@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Compass,
@@ -10,40 +10,85 @@ import {
   ListChecks,
 } from 'lucide-react'
 import { PageHeader, Card, ProgressBar } from '../components/ui'
-import { transitionTracks, transitionStats, type ChecklistItem } from '../data/transition'
+import { AiNote } from '../components/ai'
+import { transitionTracks } from '../data/transition'
+import { useFamily } from '../store/FamilyContext'
+import {
+  currentTrack,
+  firstName,
+  getAge,
+  keyMoments,
+  personalize,
+  trackProgress,
+  transitionOverview,
+} from '../store/selectors'
 import { cx } from '../lib/cx'
 
 export default function TransitionNavigator() {
-  const [activeTrack, setActiveTrack] = useState(transitionTracks[1].id) // default Age 18
-  // Local interactive state for checklists — keyed by item id.
-  const [checks, setChecks] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {}
-    transitionTracks.forEach((t) => t.checklist.forEach((i) => (init[i.id] = i.done)))
-    return init
-  })
+  const { state, dispatch } = useFamily()
+  const age = getAge(state.child)
+  const focus = currentTrack(age)
+  const [activeTrackId, setActiveTrackId] = useState(focus.id)
 
-  const track = transitionTracks.find((t) => t.id === activeTrack)!
+  const track = transitionTracks.find((t) => t.id === activeTrackId)!
+  const progress = trackProgress(track, state.checks)
+  const overview = transitionOverview(state.checks)
 
-  const trackProgress = useMemo(() => {
-    const done = track.checklist.filter((i) => checks[i.id]).length
-    return Math.round((done / track.checklist.length) * 100)
-  }, [track, checks])
+  const stats = [
+    { label: 'Years in this stage', value: '14 → 22' },
+    { label: `${state.child.name.split(' ')[0]}’s age`, value: String(age) },
+    { label: 'Stage progress', value: `${overview.pct}%` },
+    { label: 'Open priorities', value: String(overview.open) },
+  ]
 
-  const toggle = (item: ChecklistItem) =>
-    setChecks((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+  const trackTiming = (anchorAge: number, trackId: string): string => {
+    if (trackId === focus.id) return 'In focus now'
+    if (age >= anchorAge) return 'Worth revisiting'
+    const years = anchorAge - age
+    return years === 1 ? 'About a year away' : `About ${years} years away`
+  }
 
   return (
     <div className="space-y-7">
       <PageHeader
-        eyebrow="Your current focus · the wedge"
+        eyebrow="The wedge · where we go deepest"
         title="Transition to Adulthood Navigator"
         subtitle="The stretch from 14 to 22 is the most underserved part of the journey — and the most consequential. Here it’s broken into clear, age-anchored steps you can actually act on."
         icon={<Compass className="h-6 w-6" />}
       />
 
-      {/* Stat row */}
+      {/* Contextual intelligence: what deserves focus this month, and why */}
+      <AiNote title="This month’s focus">
+        {(() => {
+          const name = firstName(state.child.name)
+          const open = focus.checklist.filter((i) => !state.checks[i.id])
+          const nextLegal = keyMoments(state.child).find((m) => m.urgent) ?? keyMoments(state.child)[0]
+          if (open.length === 0) {
+            return (
+              <>
+                The <span className="font-semibold text-ink">{focus.age}</span> track is fully
+                prepared — genuinely well done. When you have a quiet moment, preview the next track
+                so nothing ahead is a surprise.
+              </>
+            )
+          }
+          return (
+            <>
+              At {age}, the <span className="font-semibold text-ink">{focus.age} · {focus.title}</span>{' '}
+              track matters most for {name}. If you only do one thing this month, make it{' '}
+              <span className="font-semibold text-ink">
+                “{personalize(open[0].label, state.child.name)}”
+              </span>
+              {open[1] && <> — then “{personalize(open[1].label, state.child.name)}”</>}.
+              {nextLegal && <> Keep in view: {nextLegal.title.toLowerCase()} ({nextLegal.dateLabel}).</>}
+            </>
+          )
+        })()}
+      </AiNote>
+
+      {/* Stat row — every number derived from live checklist state */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {transitionStats.map((s) => (
+        {stats.map((s) => (
           <Card key={s.label} className="text-center">
             <p className="font-display text-2xl font-semibold text-teal-600">{s.value}</p>
             <p className="mt-1 text-xs text-ink-faint">{s.label}</p>
@@ -54,13 +99,14 @@ export default function TransitionNavigator() {
       {/* Track selector */}
       <div className="grid gap-4 sm:grid-cols-3">
         {transitionTracks.map((t) => {
-          const done = t.checklist.filter((i) => checks[i.id]).length
-          const pct = Math.round((done / t.checklist.length) * 100)
-          const isActive = t.id === activeTrack
+          const p = trackProgress(t, state.checks)
+          const isActive = t.id === activeTrackId
+          const isFocus = t.id === focus.id
           return (
             <button
               key={t.id}
-              onClick={() => setActiveTrack(t.id)}
+              onClick={() => setActiveTrackId(t.id)}
+              aria-pressed={isActive}
               className={cx(
                 'card card-hover p-5 text-left transition-all',
                 isActive ? 'ring-2 ring-teal-300' : '',
@@ -75,11 +121,14 @@ export default function TransitionNavigator() {
                 >
                   {t.age}
                 </span>
-                <span className="text-xs font-semibold text-ink-faint">{pct}%</span>
+                <span className="text-xs font-semibold text-ink-faint">{p.pct}%</span>
               </div>
               <h3 className="section-title mt-3 text-base font-semibold">{t.title}</h3>
+              <p className={cx('mt-1 text-xs font-medium', isFocus ? 'text-lav-600' : 'text-ink-faint')}>
+                {trackTiming(t.anchorAge, t.id)}
+              </p>
               <div className="mt-3">
-                <ProgressBar value={pct} />
+                <ProgressBar value={p.pct} />
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {t.focus.slice(0, 3).map((f) => (
@@ -126,7 +175,7 @@ export default function TransitionNavigator() {
           </Card>
         </div>
 
-        {/* Interactive checklist */}
+        {/* Interactive checklist — persists in the family record */}
         <div className="lg:col-span-2">
           <Card className="lg:sticky lg:top-24">
             <div className="mb-3 flex items-center justify-between">
@@ -134,18 +183,21 @@ export default function TransitionNavigator() {
                 <ListChecks className="h-5 w-5 text-teal-600" />
                 <h3 className="section-title text-base font-semibold">Preparation checklist</h3>
               </div>
-              <span className="chip bg-teal-50 text-teal-700">{trackProgress}%</span>
+              <span className="chip bg-teal-50 text-teal-700">{progress.pct}%</span>
             </div>
             <div className="mb-4">
-              <ProgressBar value={trackProgress} />
+              <ProgressBar value={progress.pct} />
             </div>
             <ul className="space-y-2">
               {track.checklist.map((item) => {
-                const done = checks[item.id]
+                const done = !!state.checks[item.id]
+                const label = personalize(item.label, state.child.name)
                 return (
                   <li key={item.id}>
                     <button
-                      onClick={() => toggle(item)}
+                      onClick={() => dispatch({ type: 'toggle-check', id: item.id })}
+                      role="checkbox"
+                      aria-checked={done}
                       className={cx(
                         'flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors',
                         done ? 'border-teal-200 bg-teal-50/60' : 'border-line hover:bg-canvas',
@@ -156,6 +208,7 @@ export default function TransitionNavigator() {
                           'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
                           done ? 'border-teal-500 bg-teal-500 text-white' : 'border-ink-faint/40 text-transparent',
                         )}
+                        aria-hidden
                       >
                         {done ? <Check className="h-3.5 w-3.5" /> : <CircleDashed className="h-3.5 w-3.5 text-ink-faint/40" />}
                       </span>
@@ -166,7 +219,7 @@ export default function TransitionNavigator() {
                             done ? 'text-ink-faint line-through' : 'text-ink',
                           )}
                         >
-                          {item.label}
+                          {label}
                         </span>
                         {item.detail && (
                           <span className="mt-0.5 block text-xs text-ink-faint">{item.detail}</span>
@@ -177,8 +230,11 @@ export default function TransitionNavigator() {
                 )
               })}
             </ul>
+            <p className="mt-3 text-xs text-ink-faint">
+              Progress saves automatically — it’ll be here when you come back.
+            </p>
 
-            <Link to="/companion" className="btn-ghost mt-4 w-full">
+            <Link to="/companion" className="btn-ghost mt-3 w-full">
               Ask the AI Companion about {track.age} <ArrowRight className="h-4 w-4" />
             </Link>
           </Card>

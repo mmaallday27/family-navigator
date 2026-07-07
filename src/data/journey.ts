@@ -1,6 +1,9 @@
 // The full six-stage Development Lifecycle model.
-// Transition is flagged active for the demo, but every stage is fully fleshed out
-// so families can "see the whole road" from day one.
+// Every stage is fully fleshed out so families can "see the whole road" from
+// day one. Which stage is complete/active/upcoming is DERIVED from the child's
+// age in the family store (see store/selectors.ts) — never hardcoded here.
+
+export type StageStatus = 'complete' | 'active' | 'upcoming'
 
 export interface JourneyStage {
   id: string
@@ -13,7 +16,6 @@ export interface JourneyStage {
   documents: string[]
   questions: string[]
   nextSteps: string[]
-  status: 'complete' | 'active' | 'upcoming'
 }
 
 export const journeyStages: JourneyStage[] = [
@@ -23,7 +25,6 @@ export const journeyStages: JourneyStage[] = [
     ageRange: 'Birth – ~4',
     title: 'Recognition & Diagnosis',
     tagline: 'Understanding what’s happening and where to start.',
-    status: 'complete',
     concerns: [
       'Is my child developing differently?',
       'Who do we talk to first?',
@@ -58,7 +59,6 @@ export const journeyStages: JourneyStage[] = [
     ageRange: '~3 – 6',
     title: 'Early Foundation',
     tagline: 'Building skills, routines, and the first support team.',
-    status: 'complete',
     concerns: [
       'Which therapies actually help?',
       'How do we build communication?',
@@ -93,7 +93,6 @@ export const journeyStages: JourneyStage[] = [
     ageRange: '5 – 13',
     title: 'School Years',
     tagline: 'Advocacy, accommodations, and steady growth.',
-    status: 'complete',
     concerns: [
       'Is the IEP strong enough?',
       'Are accommodations being followed?',
@@ -128,8 +127,7 @@ export const journeyStages: JourneyStage[] = [
     index: 4,
     ageRange: '14 – 22',
     title: 'Transition to Adulthood',
-    tagline: 'The most underserved stretch of the road — and your current focus.',
-    status: 'active',
+    tagline: 'The most underserved stretch of the road — where we go deepest.',
     concerns: [
       'What happens when school services end?',
       'Should we pursue guardianship?',
@@ -167,7 +165,6 @@ export const journeyStages: JourneyStage[] = [
     ageRange: '22+',
     title: 'Adult Life',
     tagline: 'Employment, community, housing, and belonging.',
-    status: 'upcoming',
     concerns: [
       'How do we find the right job fit?',
       'What housing options exist?',
@@ -203,7 +200,6 @@ export const journeyStages: JourneyStage[] = [
     ageRange: 'Lifelong',
     title: 'Future Planning & Legacy',
     tagline: 'Continuity and security for the long road ahead.',
-    status: 'upcoming',
     concerns: [
       'What happens when we’re no longer here?',
       'How do we protect benefits and assets?',

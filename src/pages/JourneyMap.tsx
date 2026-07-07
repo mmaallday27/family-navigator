@@ -10,12 +10,23 @@ import {
   Flag,
   ArrowRight,
   Lightbulb,
+  Infinity as InfinityIcon,
 } from 'lucide-react'
 import { PageHeader } from '../components/ui'
-import { journeyStages, type JourneyStage } from '../data/journey'
+import { AiNote } from '../components/ai'
+import { journeyStages, type StageStatus } from '../data/journey'
+import { useFamily } from '../store/FamilyContext'
+import { firstName, getAge, stageIdForAge, stageStatus } from '../store/selectors'
+import { nextMilestone } from '../intelligence/insights'
 import { cx } from '../lib/cx'
 
-function StatusDot({ status }: { status: JourneyStage['status'] }) {
+function StatusDot({ status, lifelong }: { status: StageStatus; lifelong?: boolean }) {
+  if (lifelong)
+    return (
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-amber-500 ring-4 ring-amber-50 border border-amber-200">
+        <InfinityIcon className="h-4 w-4" />
+      </span>
+    )
   if (status === 'complete')
     return (
       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-500 text-white ring-4 ring-teal-100">
@@ -35,13 +46,13 @@ function StatusDot({ status }: { status: JourneyStage['status'] }) {
   )
 }
 
-const statusLabel: Record<JourneyStage['status'], string> = {
+const statusLabel: Record<StageStatus, string> = {
   complete: 'Behind you',
   active: 'You are here',
   upcoming: 'Ahead',
 }
 
-const statusChip: Record<JourneyStage['status'], string> = {
+const statusChip: Record<StageStatus, string> = {
   complete: 'bg-teal-50 text-teal-700',
   active: 'bg-lav-100 text-lav-600',
   upcoming: 'bg-canvas text-ink-faint',
@@ -75,16 +86,22 @@ function DetailColumn({
 }
 
 export default function JourneyMap() {
-  const [openId, setOpenId] = useState<string>('transition')
+  const { state } = useFamily()
+  const age = getAge(state.child)
+  const currentStageId = stageIdForAge(age)
+  const [openId, setOpenId] = useState<string>(currentStageId)
 
   return (
     <div className="space-y-7">
       <PageHeader
         eyebrow="The whole road, in one view"
         title="Development Journey Map"
-        subtitle="Six stages, from first questions to lifelong planning. You can see where you’ve been, where you are, and what’s ahead — so the path never feels invisible."
+        subtitle={`Six stages, from first questions to lifelong planning. You can see where ${firstName(state.child.name)} has been, where you are, and what’s ahead — so the path never feels invisible.`}
         icon={<Map className="h-6 w-6" />}
       />
+
+      {/* Contextual intelligence: the next milestone on the road */}
+      <AiNote title="Next milestone on the road">{nextMilestone(state)}</AiNote>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-sm">
@@ -94,6 +111,10 @@ export default function JourneyMap() {
             <span className="text-ink-soft">{statusLabel[s]}</span>
           </div>
         ))}
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full border border-amber-300 bg-amber-50" />
+          <span className="text-ink-soft">Lifelong — runs alongside</span>
+        </div>
       </div>
 
       {/* Timeline */}
@@ -103,27 +124,32 @@ export default function JourneyMap() {
         <div className="space-y-4">
           {journeyStages.map((stage) => {
             const open = openId === stage.id
+            const lifelong = stage.id === 'legacy'
+            const status = stageStatus(stage.id, currentStageId)
             return (
               <div key={stage.id} className="relative pl-12">
                 <div className="absolute left-0 top-3">
-                  <StatusDot status={stage.status} />
+                  <StatusDot status={status} lifelong={lifelong} />
                 </div>
 
                 <div
                   className={cx(
                     'card overflow-hidden transition-all',
-                    stage.status === 'active' && 'ring-2 ring-lav-200',
+                    status === 'active' && 'ring-2 ring-lav-200',
                   )}
                 >
                   {/* Header row (clickable) */}
                   <button
                     onClick={() => setOpenId(open ? '' : stage.id)}
+                    aria-expanded={open}
                     className="flex w-full items-center gap-4 p-5 text-left hover:bg-canvas/60"
                   >
                     <div className="flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-semibold text-ink-faint">Stage {stage.index}</span>
-                        <span className={cx('chip', statusChip[stage.status])}>{statusLabel[stage.status]}</span>
+                        <span className={cx('chip', lifelong ? 'bg-amber-50 text-amber-600' : statusChip[status])}>
+                          {lifelong ? 'Start anytime' : statusLabel[status]}
+                        </span>
                         <span className="text-xs text-ink-faint">Ages {stage.ageRange}</span>
                       </div>
                       <h3 className="section-title mt-1 text-lg font-semibold">{stage.title}</h3>
@@ -134,6 +160,7 @@ export default function JourneyMap() {
                         'h-5 w-5 shrink-0 text-ink-faint transition-transform',
                         open ? 'rotate-90' : '',
                       )}
+                      aria-hidden
                     />
                   </button>
 
@@ -173,7 +200,7 @@ export default function JourneyMap() {
                             <span key={step} className="chip bg-teal-50 text-teal-700">{step}</span>
                           ))}
                         </div>
-                        {stage.status === 'active' && (
+                        {stage.id === 'transition' && (
                           <Link to="/transition" className="btn-primary mt-4">
                             Go deeper in the Transition Navigator <ArrowRight className="h-4 w-4" />
                           </Link>

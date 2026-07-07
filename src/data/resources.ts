@@ -8,6 +8,12 @@ export interface Resource {
   contact: string
   free: boolean
   tags: string[]
+  /** Lifecycle stages this resource is most relevant to — used for matching. */
+  stages: string[]
+  /** Onboarding concern ids this resource speaks to — used for matching. */
+  concernIds: string[]
+  /** Recently added to the directory — surfaced as "new" in briefings. */
+  addedRecently?: boolean
 }
 
 export const resourceTypes = [
@@ -31,6 +37,8 @@ export const resources: Resource[] = [
     contact: 'Free helpline · workshops',
     free: true,
     tags: ['IEP', 'Rights', 'Free'],
+    stages: ['recognition', 'early', 'school', 'transition'],
+    concernIds: ['iep', 'overwhelmed'],
   },
   {
     id: 'r2',
@@ -42,6 +50,8 @@ export const resources: Resource[] = [
     contact: 'Referral via school or self-refer',
     free: true,
     tags: ['Transition', 'Adult services', 'Free'],
+    stages: ['transition'],
+    concernIds: ['after-school', 'legal-18'],
   },
   {
     id: 'r3',
@@ -53,6 +63,8 @@ export const resources: Resource[] = [
     contact: 'Apply online · in-person intake',
     free: true,
     tags: ['Employment', 'Pre-ETS', 'Free'],
+    stages: ['transition', 'adult'],
+    concernIds: ['employment', 'after-school'],
   },
   {
     id: 'r4',
@@ -64,6 +76,8 @@ export const resources: Resource[] = [
     contact: 'Consultation (fees vary)',
     free: false,
     tags: ['Guardianship', 'Trusts', 'Legal'],
+    stages: ['transition', 'adult', 'legacy'],
+    concernIds: ['legal-18', 'housing'],
   },
   {
     id: 'r5',
@@ -75,6 +89,8 @@ export const resources: Resource[] = [
     contact: 'Waitlist intake — apply early',
     free: true,
     tags: ['Waiver', 'Day programs', 'Adult'],
+    stages: ['transition', 'adult'],
+    concernIds: ['after-school', 'housing', 'benefits'],
   },
   {
     id: 'r6',
@@ -86,6 +102,9 @@ export const resources: Resource[] = [
     contact: 'Referral · often VR-funded',
     free: true,
     tags: ['Employment', 'Job coaching'],
+    stages: ['transition', 'adult'],
+    concernIds: ['employment'],
+    addedRecently: true,
   },
   {
     id: 'r7',
@@ -97,6 +116,8 @@ export const resources: Resource[] = [
     contact: 'Free · monthly meetings',
     free: true,
     tags: ['Community', 'Peer support', 'Free'],
+    stages: ['recognition', 'early', 'school', 'transition', 'adult'],
+    concernIds: ['overwhelmed'],
   },
   {
     id: 'r8',
@@ -108,6 +129,8 @@ export const resources: Resource[] = [
     contact: 'Enroll by term',
     free: false,
     tags: ['Independent living', 'Skills'],
+    stages: ['transition', 'adult'],
+    concernIds: ['independence', 'housing'],
   },
   {
     id: 'r9',
@@ -119,5 +142,8 @@ export const resources: Resource[] = [
     contact: 'Open account online',
     free: true,
     tags: ['Benefits', 'Savings', 'ABLE'],
+    stages: ['transition', 'adult', 'legacy'],
+    concernIds: ['benefits'],
+    addedRecently: true,
   },
 ]

@@ -1,6 +1,6 @@
 # AI Family Navigator
 
-**A Development Lifecycle Navigation Platform for families raising children with autism and developmental differences.** XPRIZE-oriented high-fidelity prototype.
+**A Development Lifecycle Platform for families raising children with autism and developmental differences.** XPRIZE-oriented high-fidelity prototype.
 
 > This is not an autism chatbot, a medical application, or a therapy replacement. It is a navigation system that helps families understand *where they are, what comes next, and how to prepare for major life transitions.*
 
@@ -15,27 +15,67 @@ The full developmental lifecycle, visible from day one:
 3. **School Years**
 4. **Transition to Adulthood** ← the wedge, and the deepest part of the prototype
 5. **Adult Life**
-6. **Future Planning & Legacy**
+6. **Future Planning & Legacy** (lifelong — runs alongside the others)
+
+## The intelligence layer
+
+The AI is not a chatbot on one page — it is the operating system of the product. A deterministic reasoning engine (`src/intelligence/`) continuously evaluates the family record and powers every screen:
+
+- **Family Executive Briefing** (home) — every visit opens with a personalized briefing: this week's priorities ranked by urgency, an estimated time investment, what's new since the last visit, and dismissible watch-outs. All derived, never canned.
+- **Proactive guidance** — age-triggered legal deadlines (14 / 18 / 22 computed from the real birthday), unmet preparation steps, flagged and *missing* documents, team gaps, and newly matched programs surface before anyone asks.
+- **Document understanding** — adding a document (an IEP, a benefits denial, waiver paperwork…) triggers an analysis: what it is, action items, deadline patterns to verify, what's commonly missing, and how the rest of the record responds.
+- **Scenario planning** — "What happens when Eli turns 18?" "What if SSI is denied?" "What if we move states?" — honest maps of the paths, personalized with real names and dates.
+- **Meeting preparation** — IEP, attorney, benefits, and medical meeting kits: agenda, questions generated from the family's actual open items, and a documents list cross-checked against the real vault.
+- **Decision support** — guardianship vs. supported decision-making, SSI vs. SSDI, housing models, employment pathways: options, honest tradeoffs, and the questions that reveal fit. Educational, never prescriptive.
+- **Persistent memory** — the navigator resumes conversations across sessions, remembers topics already discussed ("picking up where we left off…"), and tracks visits and dismissed insights.
+- **Trust layer** — every answer is visibly badged (*From your family record* vs. *General guidance*), deadline patterns are phrased as verify-against-the-letter guidance, and legal/medical/benefits topics carry an explicit "bring this to a professional" note.
+
+The engine is intentionally deterministic in this prototype (reliable, offline, honest about what it is); its interfaces — `deriveInsights`, `analyzeDocument`, `buildMeetingKit`, scenario/decision builders — are the seam where a live model slots in without touching any screen.
+
+## How it works
+
+**It starts with your family, not a menu.** A first-run welcome journey (`/welcome`) asks who you are, who your child is, and what's weighing on you — then derives the current lifecycle stage from the child's age and turns your concerns into starter goals. Or explore instantly with a fully-populated sample family.
+
+**The platform remembers.** All interactive state — profile, transition checklists, goals, documents, saved resources — lives in a single persistent family store (`src/store/FamilyContext.tsx`, localStorage-backed). Close the tab, come back next month: your progress is exactly where you left it.
+
+**Every number is derived, never asserted.** Stage status, progress percentages, "open priorities," legal milestone dates (turning 14 / 18 / 22), and dashboard recommendations are all computed from live state in `src/store/selectors.ts`. Check an item in the Transition Navigator and the dashboard, companion, and stats all change together.
+
+**The AI Companion knows this family.** It answers with the child's name, filters suggested prompts by lifecycle stage, and "where are we right now?" is answered live from the family record — real progress, real next steps.
 
 ## Modules
 
 | Module | What it does |
 | --- | --- |
-| **Home Dashboard** | Child profile, current stage, active goals, upcoming milestones, recommended next steps |
-| **Journey Map** | All six life stages — concerns, milestones, documents, questions, and next steps |
-| **Transition Navigator** | The wedge: Age 14 / 18 / 21–22 tracks with guidance + interactive checklists |
-| **AI Companion** | Conversational guide that educates, organizes, and prepares (never diagnoses or gives medical/legal advice) |
-| **Document Vault** | Categorized, searchable document organization with an upload workflow |
-| **Resource Navigator** | Filterable directory of organizations, coordinators, attorneys, and programs |
-| **Family Circle** | The coordinated support network around the child |
+| **Welcome journey** | Onboarding that personalizes the entire product in under two minutes |
+| **Home Dashboard** | Where are we, what's coming, what to do next — all derived from live state |
+| **Journey Map** | All six life stages with "you are here" computed from the child's age |
+| **Transition Navigator** | The wedge: Age 14 / 18 / 21–22 tracks with guidance + persistent checklists |
+| **AI Companion** | Stage-aware conversational guide (educates & organizes; never diagnoses or gives medical/legal advice) |
+| **Document Vault** | Categorized, searchable document record with a working add-to-vault flow |
+| **Resource Navigator** | Filterable directory with persistent saves |
+| **Family Circle** | The coordinated support network — with stage-relevant open roles suggested for new families |
 
 ## Design intent
 
-Light, warm, calm, and accessible — the opposite of a dark AI dashboard. Parents should feel **calmer** after opening the product, not more overwhelmed.
+Light, warm, calm, and accessible — the opposite of a dark AI dashboard. Parents should feel **calmer** after opening the product, not more overwhelmed. Keyboard-visible focus rings, labelled dialogs with Escape/focus handling, live-region chat, and `prefers-reduced-motion` support throughout.
 
-## Tech
+## Architecture
 
-React + Vite + TypeScript + Tailwind CSS · React Router · lucide-react. All data is mock/illustrative; no backend, auth, or billing.
+```
+src/
+  store/         FamilyContext (persistent state incl. AI memory + activity log)
+                 + selectors (all derived data)
+  intelligence/  The reasoning engine: insights & briefing, document analysis,
+                 scenarios, meeting kits, decision support
+  data/          Pure content: journey stages, transition tracks, companion
+                 knowledge, resources (with matching metadata), sample family
+  components/    Layout, shared UI primitives, and the AI visual language
+                 (source badges, insight cards, contextual notes)
+  pages/         Onboarding, Dashboard, JourneyMap, TransitionNavigator,
+                 Companion, DocumentVault, ResourceNavigator, FamilyCircle
+```
+
+React + Vite + TypeScript + Tailwind CSS · React Router · lucide-react. All content is illustrative; no backend, auth, or billing. State persists per-device in localStorage.
 
 ## Run it
 
@@ -45,3 +85,5 @@ npm run dev      # http://localhost:5173
 npm run build    # type-check + production build
 npm run preview  # preview the production build
 ```
+
+Use the ↺ button next to your name in the sidebar to reset and go through onboarding again.

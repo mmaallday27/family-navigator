@@ -25,7 +25,9 @@ export const docCategories: DocCategory[] = [
   { id: 'medical', name: 'Medical Summaries', description: 'Records & medication', color: 'sage' },
 ]
 
-export const docFiles: DocFile[] = [
+// Sample vault contents for the demo family. A family that onboards fresh
+// starts with an empty vault and builds their own record over time.
+export const demoDocFiles: DocFile[] = [
   { id: 'f1', name: '2026 IEP — Annual Review.pdf', categoryId: 'iep', date: 'Sep 19, 2025', size: '1.2 MB' },
   { id: 'f2', name: 'IEP Transition Goals (draft).docx', categoryId: 'transition', date: 'May 2, 2026', size: '88 KB', flagged: true, note: 'Needs your review before the fall meeting' },
   { id: 'f3', name: 'Psychoeducational Evaluation.pdf', categoryId: 'eval', date: 'Mar 11, 2024', size: '2.4 MB', flagged: true, note: 'Adult services may want a more recent eval' },
