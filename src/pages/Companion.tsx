@@ -40,6 +40,8 @@ import { buildBriefing } from '../intelligence/insights'
 import { matchScenario, scenarios } from '../intelligence/scenarios'
 import { buildMeetingKit, detectMeetingType } from '../intelligence/meetings'
 import { decisionTopics, matchDecision } from '../intelligence/decisions'
+import { askNavigator, getNavigatorStatus } from '../ai/client'
+import { buildFacts } from '../ai/buildContext'
 import { cx } from '../lib/cx'
 
 /** Personalize every string in a response with the child's name. */
@@ -257,6 +259,13 @@ export default function Companion() {
   const endRef = useRef<HTMLDivElement>(null)
   const idRef = useRef(messages.reduce((m, x) => Math.max(m, x.id), 0) + 1)
 
+  // Is a live model configured on the server? If so, answers are generated and
+  // grounded; if not, the deterministic engine answers. Either way it works.
+  const [aiEnabled, setAiEnabled] = useState(false)
+  useEffect(() => {
+    getNavigatorStatus().then(setAiEnabled)
+  }, [])
+
   // Showcase the reasoning modules, then stage-relevant knowledge.
   const suggestions = useMemo(() => {
     const items: { label: string; prompt: string; category: string }[] = [
@@ -290,24 +299,43 @@ export default function Companion() {
     const value = text.trim()
     if (!value || typing) return
     const userMsg: StoredMessage = { id: idRef.current++, role: 'user', text: value }
+    const priorHistory = messages
+      .map((m) => ({ role: m.role, text: m.text ?? m.answer?.intro ?? '' }))
+      .filter((h) => h.text)
     const withUser = [...messages, userMsg]
     setMessages(withUser)
     setInput('')
     setTyping(true)
-    // Simulate a thoughtful pause, then answer from the reasoning modules + live state.
-    window.setTimeout(() => {
-      const { response, topic } = resolveAnswer(value, state)
-      const remembered = topic && state.aiMemory.topicsDiscussed.includes(topic)
-      const answer: CompanionResponse = remembered
-        ? { ...response, intro: `Picking up where we left off on this — ${response.intro}` }
-        : response
+
+    // Always compute the deterministic answer first: it is both the grounding
+    // the live model reasons over and the fallback if the model is off or errors.
+    const { response: det, topic } = resolveAnswer(value, state)
+    const remembered = topic && state.aiMemory.topicsDiscussed.includes(topic)
+    const detAnswer: CompanionResponse = remembered
+      ? { ...det, intro: `Picking up where we left off on this — ${det.intro}` }
+      : det
+
+    const finish = (answer: CompanionResponse) => {
       const withAnswer = [...withUser, { id: idRef.current++, role: 'assistant' as const, answer }]
       setMessages(withAnswer)
       setTyping(false)
       // Persist: the conversation and the topic memory both survive the session.
       dispatch({ type: 'set-companion-messages', messages: withAnswer })
       if (topic) dispatch({ type: 'companion-topic', topic })
-    }, 850)
+    }
+
+    if (aiEnabled) {
+      // Real generation, grounded in the family record and the deterministic answer.
+      askNavigator({
+        message: value,
+        facts: buildFacts(state),
+        grounding: det,
+        history: priorHistory,
+      }).then((ai) => finish(ai ?? detAnswer))
+    } else {
+      // Deterministic engine, with a thoughtful pause so it doesn't feel instant.
+      window.setTimeout(() => finish(detAnswer), 850)
+    }
   }
 
   const clearConversation = () => {
@@ -416,9 +444,25 @@ export default function Companion() {
 
         {/* Suggested prompts — the reasoning modules, front and center */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" />
-            <h3 className="section-title text-sm font-semibold">Try asking</h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-500" />
+              <h3 className="section-title text-sm font-semibold">Try asking</h3>
+            </div>
+            <span
+              className={cx(
+                'chip',
+                aiEnabled ? 'bg-teal-50 text-teal-700' : 'bg-canvas text-ink-faint',
+              )}
+              title={
+                aiEnabled
+                  ? 'A live model is answering, grounded in your family record.'
+                  : 'Answers come from the built-in reasoning engine.'
+              }
+            >
+              <span className={cx('h-1.5 w-1.5 rounded-full', aiEnabled ? 'bg-teal-500' : 'bg-ink-faint/50')} />
+              {aiEnabled ? 'Live AI' : 'Guided'}
+            </span>
           </div>
           <button
             onClick={() => send('Where are we right now?')}
@@ -440,8 +484,9 @@ export default function Companion() {
             </button>
           ))}
           <p className="rounded-xl bg-canvas px-4 py-3 text-xs leading-relaxed text-ink-faint">
-            Responses in this prototype are generated from your family record and a curated
-            knowledge base — not a live AI model. Always verify dates against official letters.
+            {aiEnabled
+              ? 'A live model generates these answers, grounded in your family record so it reasons over real facts. Always verify dates against official letters.'
+              : 'Responses come from the built-in reasoning engine, grounded in your family record. Add an API key to enable live generation. Always verify dates against official letters.'}
           </p>
         </div>
       </div>

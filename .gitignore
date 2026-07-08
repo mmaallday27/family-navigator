@@ -3,10 +3,16 @@ dist
 dist-ssr
 *.local
 
+# Secrets — the navigator's API key lives here, never in the repo
+.env
+.env.local
+
 # TS composite build artifacts
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+vite-plugin-navigator.js
+vite-plugin-navigator.d.ts
 .DS_Store
 .vscode/*
 !.vscode/extensions.json

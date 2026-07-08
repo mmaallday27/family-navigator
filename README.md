@@ -33,7 +33,25 @@ The AI is not a chatbot on one page — it is the operating system of the produc
 - **Persistent memory** — the navigator resumes conversations across sessions, remembers topics already discussed ("picking up where we left off…"), and tracks visits and dismissed insights.
 - **Trust layer** — every answer is visibly badged (*From your family record* vs. *General guidance*), deadline patterns are phrased as verify-against-the-letter guidance, and legal/medical/benefits topics carry an explicit "bring this to a professional" note.
 
-The engine is intentionally deterministic in this prototype (reliable, offline, honest about what it is); its interfaces — `deriveInsights`, `analyzeDocument`, `buildMeetingKit`, scenario/decision builders — are the seam where a live model slots in without touching any screen.
+The engine's interfaces — `deriveInsights`, `analyzeDocument`, `buildMeetingKit`, scenario/decision builders — are the seam a live model plugs into. That seam is now wired (see below); with no key, the deterministic engine runs the whole product offline.
+
+## Turning on the live AI
+
+The Navigator can be powered by a real Claude model. It's off by default (the deterministic engine answers), and turns on the moment a key is present:
+
+```bash
+cp .env.example .env      # then paste your key into ANTHROPIC_API_KEY
+npm run dev               # the Companion header now shows "Live AI"
+```
+
+How it's built, and why it's safe:
+
+- **The key never reaches the browser.** A Vite dev-server plugin (`vite-plugin-navigator.ts`) holds the key in Node and exposes a same-origin proxy at `/api/navigator`. The client (`src/ai/client.ts`) only ever calls that proxy. The Anthropic SDK is never bundled into the client (the browser bundle size is unchanged).
+- **The model is grounded, so it can't fabricate.** Every request carries a fact sheet built from the family record (`src/ai/buildContext.ts`) *and the deterministic engine's own answer to the same question* as reference material. The model reasons over real facts — dates, progress, documents, deadlines — rather than inventing them (`claude-opus-4-8`, structured output via `output_config.format`).
+- **The trust layer survives generation.** Output is forced to a schema that carries the record-vs-guidance label and the professional-consultation note; the system prompt encodes the constitution's voice and never-fabricate / route-to-a-professional doctrines.
+- **It degrades gracefully.** No key → the status endpoint reports unconfigured and the deterministic engine answers (the app is fully usable offline, the build stays green). Any request failure → the client falls back to the deterministic answer it already computed. The Companion badge shows **Live AI** or **Guided** so you always know which is answering.
+
+For production (a static host, where the dev middleware doesn't run), port the `generate()` logic from `vite-plugin-navigator.ts` into a serverless function at `/api/navigator` with the same request/response contract (`src/ai/types.ts`) — the client needs no changes.
 
 ## How it works
 
@@ -68,6 +86,8 @@ Light, warm, calm, and accessible — the opposite of a dark AI dashboard. Paren
 src/
   store/         FamilyContext (persistent state incl. AI memory + activity log)
                  + selectors (all derived data)
+  ai/            Live-model layer: client proxy caller, grounding context
+                 builder, wire types (server proxy is vite-plugin-navigator.ts)
   intelligence/  The reasoning engine: insights & briefing (with wins),
                  look-ahead horizons & timeline, document analysis,
                  scenarios, meeting kits, decision support
