@@ -102,6 +102,13 @@ src/
 
 React + Vite + TypeScript + Tailwind CSS · React Router · lucide-react. All content is illustrative; no backend, auth, or billing. State persists per-device in localStorage.
 
+## The permanent documents
+
+Two strategy documents in [`docs/`](docs/) are the decade-scale foundation the code is built against:
+
+- [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) — the **Constitutional Blueprint**: why we exist, the category we create, the reframe, the constitution, the 13 architectures, the five-year arc, and the six-question feature test.
+- [`docs/REASONING.md`](docs/REASONING.md) — the **Reasoning Architecture**: how the AI *thinks* — the reasoning loop, the multidisciplinary panel, 30 domain reasoning modules, decision/document/meeting/context intelligence, emotional reasoning, the AI constitution, and the cross-domain knowledge graph. This is the training-and-evaluation foundation for every future model.
+
 ## Run it
 
 ```bash

@@ -14,6 +14,8 @@ Sections 1–3 are the **argument**: what's true, what category we're in, and th
 
 If you only read one thing, read Section 3 (The Reframe) and Section 9 (The Six Questions).
 
+This document governs *values* (why we exist, what we build). Its companion, [`REASONING.md`](REASONING.md), governs *method* (how the intelligence reasons). Read that one to see how the doctrines here become the AI's actual thinking.
+
 ---
 
 ## 1. Constitutional review — is the current vision correct?
