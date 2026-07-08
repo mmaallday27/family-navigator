@@ -20,7 +20,6 @@ import { allChecklistItems } from '../data/transition'
 
 export interface ChildProfile {
   name: string
-  pronouns: string
   /** ISO date (yyyy-mm-dd). Age and legal milestones are derived from this. */
   birthDate: string
   diagnosis: string
@@ -135,7 +134,6 @@ function addActivity(state: FamilyState, text: string): ActivityEvent[] {
 
 const emptyChild: ChildProfile = {
   name: '',
-  pronouns: '',
   birthDate: '',
   diagnosis: '',
   diagnosedAt: '',

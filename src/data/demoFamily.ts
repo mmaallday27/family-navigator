@@ -6,7 +6,6 @@ import { demoDocFiles } from './documents'
 
 export const demoChild: ChildProfile = {
   name: 'Eli Carter',
-  pronouns: 'he/him',
   birthDate: '2009-03-04',
   diagnosis: 'Autism Spectrum (Level 1) · ADHD',
   diagnosedAt: 'Age 4',

@@ -81,7 +81,6 @@ export default function Onboarding() {
   const [parentName, setParentName] = useState('')
   const [childName, setChildName] = useState('')
   const [childAge, setChildAge] = useState<number | ''>('')
-  const [pronouns, setPronouns] = useState('')
   const [diagnosis, setDiagnosis] = useState('')
   const [concerns, setConcerns] = useState<string[]>([])
   const [strengths, setStrengths] = useState<string[]>([])
@@ -131,7 +130,6 @@ export default function Onboarding() {
     const now = new Date()
     const child: ChildProfile = {
       name: childName.trim(),
-      pronouns,
       // Approximate birth date from age — refined later in a full profile.
       birthDate: `${now.getFullYear() - age}-${String(now.getMonth() + 1).padStart(2, '0')}-01`,
       diagnosis: diagnosis.trim(),
@@ -244,19 +242,6 @@ export default function Onboarding() {
                   placeholder="e.g. 15"
                   className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
                 />
-              </label>
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Pronouns (optional)</span>
-                <select
-                  value={pronouns}
-                  onChange={(e) => setPronouns(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink focus:border-teal-300"
-                >
-                  <option value="">Prefer not to say</option>
-                  <option value="he/him">he/him</option>
-                  <option value="she/her">she/her</option>
-                  <option value="they/them">they/them</option>
-                </select>
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Diagnosis (optional)</span>

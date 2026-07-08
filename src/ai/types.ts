@@ -11,7 +11,6 @@ export interface NavigatorFacts {
   childFirst: string
   parentFirst: string
   age: number
-  pronouns: string
   diagnosis: string
   stageId: string
   stageTitle: string

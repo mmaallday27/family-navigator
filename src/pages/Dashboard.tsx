@@ -181,7 +181,7 @@ export default function Dashboard() {
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h2 className="section-title text-xl font-semibold">{child.name}</h2>
                 <span className="text-sm text-ink-faint">
-                  {[child.pronouns, `age ${age}`, child.schoolGrade].filter(Boolean).join(' · ')}
+                  {[`age ${age}`, child.schoolGrade].filter(Boolean).join(' · ')}
                 </span>
               </div>
               {child.diagnosis && (

@@ -75,7 +75,6 @@ function factSheet(facts: any): string {
   push('Child', `${facts.childName} (goes by ${facts.childFirst})`)
   push('Parent/coordinator', facts.parentFirst)
   push('Age', facts.age)
-  push('Pronouns', facts.pronouns)
   push('Diagnosis', facts.diagnosis)
   push('Current lifecycle stage', `${facts.stageTitle} (${facts.stageId})`)
   push('Strengths', facts.strengths)

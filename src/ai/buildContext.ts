@@ -45,7 +45,6 @@ export function buildFacts(state: FamilyState): NavigatorFacts {
     childFirst: firstName(state.child.name),
     parentFirst: firstName(state.parent.name),
     age,
-    pronouns: state.child.pronouns,
     diagnosis: state.child.diagnosis,
     stageId,
     stageTitle: stage?.title ?? '',
