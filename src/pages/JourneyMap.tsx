@@ -13,7 +13,7 @@ import {
   Infinity as InfinityIcon,
 } from 'lucide-react'
 import { PageHeader } from '../components/ui'
-import { AiNote } from '../components/ai'
+import { AiNote, WhyThisMatters } from '../components/ai'
 import { journeyStages, type StageStatus } from '../data/journey'
 import { useFamily } from '../store/FamilyContext'
 import { firstName, getAge, stageIdForAge, stageStatus } from '../store/selectors'
@@ -102,6 +102,12 @@ export default function JourneyMap() {
 
       {/* Contextual intelligence: the next milestone on the road */}
       <AiNote title="Next milestone on the road">{nextMilestone(state)}</AiNote>
+
+      <WhyThisMatters
+        matters="Most families are handed one stage at a time and never shown the whole road. Seeing all six stages at once means every decision can be made with the future in view, not in reaction to it."
+        now="You don't need to act on future stages today — but knowing they exist, and roughly when they arrive, is what turns dread of the unknown into a plan you can pace."
+        connects="Each stage links to the concrete work it holds — and the active stage opens straight into your Transition Navigator and Look Ahead."
+      />
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-sm">

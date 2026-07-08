@@ -9,7 +9,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import { PageHeader, Card, EmptyState, Modal } from '../components/ui'
-import { AiNote, SourceBadge } from '../components/ai'
+import { AiNote, SourceBadge, WhyThisMatters } from '../components/ai'
 import { docCategories } from '../data/documents'
 import { useFamily } from '../store/FamilyContext'
 import { firstName } from '../store/selectors'
@@ -99,6 +99,12 @@ export default function DocumentVault() {
           </div>
         </Card>
       </div>
+
+      <WhyThisMatters
+        matters="Every service, benefit, and legal step downstream asks for paperwork you already have — the current IEP, a recent evaluation, benefits letters. A family that can produce the right document in a moment moves faster and gets taken more seriously."
+        now="Documents scatter across email, folders, and backpacks exactly when you're busiest. Gathering them into one place before you need them turns future emergencies into quiet lookups."
+        connects="When you add a document, I read what it is, flag deadlines and gaps, and update your briefing, meeting prep, and Look Ahead — nothing sits in isolation."
+      />
 
       {/* Vault health — what the record is missing for this stage */}
       {documents.length > 0 && (

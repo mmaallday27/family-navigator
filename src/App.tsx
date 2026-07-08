@@ -4,6 +4,8 @@ import Layout from './components/Layout'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import JourneyMap from './pages/JourneyMap'
+import LookAhead from './pages/LookAhead'
+import Timeline from './pages/Timeline'
 import TransitionNavigator from './pages/TransitionNavigator'
 import Companion from './pages/Companion'
 import DocumentVault from './pages/DocumentVault'
@@ -26,6 +28,8 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/journey" element={<JourneyMap />} />
+            <Route path="/look-ahead" element={<LookAhead />} />
+            <Route path="/timeline" element={<Timeline />} />
             <Route path="/transition" element={<TransitionNavigator />} />
             <Route path="/companion" element={<Companion />} />
             <Route path="/documents" element={<DocumentVault />} />

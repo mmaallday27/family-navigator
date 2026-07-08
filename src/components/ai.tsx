@@ -16,6 +16,8 @@ import {
   Clock,
   Database,
   BookOpen,
+  HelpCircle,
+  ChevronDown,
 } from 'lucide-react'
 import { cx } from '../lib/cx'
 import type { Insight, InsightKind } from '../intelligence/insights'
@@ -57,6 +59,45 @@ export function AiNote({
         {action && <div className="mt-2">{action}</div>}
       </div>
     </div>
+  )
+}
+
+/**
+ * "Why this matters" context — the quiet orientation every major screen owes
+ * the family: why they're here, why now, and how it connects to the journey.
+ */
+export function WhyThisMatters({
+  matters,
+  now,
+  connects,
+}: {
+  matters: string
+  now?: string
+  connects?: string
+}) {
+  return (
+    <details className="group rounded-2xl border border-line bg-surface open:bg-canvas/40">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-ink-soft">
+        <HelpCircle className="h-4 w-4 text-teal-500" />
+        Why this matters
+        <ChevronDown className="ml-auto h-4 w-4 text-ink-faint transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-2.5 px-4 pb-4 pt-0 text-sm leading-relaxed text-ink-soft">
+        <p>{matters}</p>
+        {now && (
+          <p>
+            <span className="font-semibold text-ink">Why now: </span>
+            {now}
+          </p>
+        )}
+        {connects && (
+          <p>
+            <span className="font-semibold text-ink">How it connects: </span>
+            {connects}
+          </p>
+        )}
+      </div>
+    </details>
   )
 }
 

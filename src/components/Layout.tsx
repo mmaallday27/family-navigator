@@ -12,6 +12,8 @@ import {
   X,
   Sparkles,
   RotateCcw,
+  Telescope,
+  History,
 } from 'lucide-react'
 import { cx } from '../lib/cx'
 import { useFamily } from '../store/FamilyContext'
@@ -27,13 +29,15 @@ const navGroups = [
     label: 'Your journey',
     items: [
       { to: '/journey', label: 'Journey Map', icon: Map },
+      { to: '/look-ahead', label: 'Look Ahead', icon: Telescope },
+      { to: '/timeline', label: 'Family Timeline', icon: History },
       { to: '/transition', label: 'Transition Navigator', icon: Compass },
     ],
   },
   {
     label: 'Everyday tools',
     items: [
-      { to: '/companion', label: 'AI Companion', icon: MessageCircleHeart },
+      { to: '/companion', label: 'Your Navigator', icon: MessageCircleHeart },
       { to: '/documents', label: 'Document Vault', icon: FolderHeart },
       { to: '/resources', label: 'Resource Navigator', icon: LifeBuoy },
     ],

@@ -21,7 +21,10 @@ The full developmental lifecycle, visible from day one:
 
 The AI is not a chatbot on one page — it is the operating system of the product. A deterministic reasoning engine (`src/intelligence/`) continuously evaluates the family record and powers every screen:
 
-- **Family Executive Briefing** (home) — every visit opens with a personalized briefing: this week's priorities ranked by urgency, an estimated time investment, what's new since the last visit, and dismissible watch-outs. All derived, never canned.
+- **The Family Command Center** (home) — every visit opens with a daily navigation briefing: a plain-language orientation ("Today you're helping Eli prepare for adulthood"), this week's priorities ranked by urgency with a total time estimate, reassuring "on track" wins, a welcome-back acknowledgment after time away, and what's new since the last visit. All derived, never canned.
+- **Look Ahead** — the unknown, made visible: everything approaching across five horizons (30 days → 5 years), projected from the child's real birthday, open preparation steps, and known deadlines. Items whose ideal window has arrived are marked *Start now*.
+- **Family Timeline** — the road already walked: a living history assembled from the record (birth, diagnosis, milestones, documents, decisions, services), so families see progress over years, not just today's tasks.
+- **"Why this matters"** — every major screen can explain, in the navigator's voice, why it matters, why now, and how it connects to the larger journey.
 - **Proactive guidance** — age-triggered legal deadlines (14 / 18 / 22 computed from the real birthday), unmet preparation steps, flagged and *missing* documents, team gaps, and newly matched programs surface before anyone asks.
 - **Document understanding** — adding a document (an IEP, a benefits denial, waiver paperwork…) triggers an analysis: what it is, action items, deadline patterns to verify, what's commonly missing, and how the rest of the record responds.
 - **Scenario planning** — "What happens when Eli turns 18?" "What if SSI is denied?" "What if we move states?" — honest maps of the paths, personalized with real names and dates.
@@ -65,14 +68,16 @@ Light, warm, calm, and accessible — the opposite of a dark AI dashboard. Paren
 src/
   store/         FamilyContext (persistent state incl. AI memory + activity log)
                  + selectors (all derived data)
-  intelligence/  The reasoning engine: insights & briefing, document analysis,
+  intelligence/  The reasoning engine: insights & briefing (with wins),
+                 look-ahead horizons & timeline, document analysis,
                  scenarios, meeting kits, decision support
   data/          Pure content: journey stages, transition tracks, companion
                  knowledge, resources (with matching metadata), sample family
   components/    Layout, shared UI primitives, and the AI visual language
                  (source badges, insight cards, contextual notes)
-  pages/         Onboarding, Dashboard, JourneyMap, TransitionNavigator,
-                 Companion, DocumentVault, ResourceNavigator, FamilyCircle
+  pages/         Onboarding, Dashboard (Command Center), JourneyMap, LookAhead,
+                 Timeline, TransitionNavigator, Companion, DocumentVault,
+                 ResourceNavigator, FamilyCircle
 ```
 
 React + Vite + TypeScript + Tailwind CSS · React Router · lucide-react. All content is illustrative; no backend, auth, or billing. State persists per-device in localStorage.

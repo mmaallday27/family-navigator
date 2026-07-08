@@ -10,7 +10,7 @@ import {
   ListChecks,
 } from 'lucide-react'
 import { PageHeader, Card, ProgressBar } from '../components/ui'
-import { AiNote } from '../components/ai'
+import { AiNote, WhyThisMatters } from '../components/ai'
 import { transitionTracks } from '../data/transition'
 import { useFamily } from '../store/FamilyContext'
 import {
@@ -85,6 +85,12 @@ export default function TransitionNavigator() {
           )
         })()}
       </AiNote>
+
+      <WhyThisMatters
+        matters="The transition years decide how adulthood actually begins. School services are a legal entitlement that ends — adult services, benefits, and legal standing all have to be arranged in advance, and each runs on its own clock."
+        now={`At ${age}, ${firstName(state.child.name)} is inside this window. Waitlists, court timelines, and paperwork all take longer than expected, so early is calm and late is a scramble.`}
+        connects="Every step you check here flows straight to your briefing, your Look Ahead, and the documents you’ll want in hand at the next IEP or agency meeting."
+      />
 
       {/* Stat row — every number derived from live checklist state */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

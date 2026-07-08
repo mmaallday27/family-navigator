@@ -368,17 +368,63 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
 }
 
 // ---------------------------------------------------------------------------
+// Wins — the reassuring "you're on track" lines. Confidence from competence:
+// the briefing should name what's already going right, not only what's open.
+// ---------------------------------------------------------------------------
+
+export function deriveWins(state: FamilyState, now: Date = new Date()): string[] {
+  const age = getAge(state.child, now)
+  const stageId = stageIdForAge(age)
+  const name = firstName(state.child.name)
+  const wins: string[] = []
+
+  if (stageId === 'transition') {
+    const overview = transitionOverview(state.checks)
+    const track = currentTrack(age)
+    const tp = trackProgress(track, state.checks)
+
+    if (overview.done > 0 && overview.pct < 100) {
+      wins.push(`Transition planning is underway — ${overview.done} of ${overview.total} steps done, and moving.`)
+    }
+    if (tp.total > 0 && tp.done === tp.total) {
+      wins.push(`The ${track.age} track is fully prepared. Genuinely ahead of the curve.`)
+    }
+    if (state.checks['c18a']) wins.push('Your decision-making approach is settled — the hardest age-18 question is behind you.')
+    if (state.checks['c21a']) wins.push('The VR application is in — employment support won’t lapse when school ends.')
+    if (state.checks['c21b']) wins.push('You’re on the waiver waitlists — you started the clock early, which is exactly right.')
+  } else {
+    const stage = journeyStages.find((s) => s.id === stageId)
+    if (stage) wins.push(`${name} is steady in the ${stage.title} stage — this is a season for building, not bracing.`)
+  }
+
+  if (state.documents.length >= 3) {
+    wins.push(`${name}’s record is building — ${state.documents.length} documents organized and ready when anyone asks.`)
+  }
+  if (state.savedResources.length > 0) {
+    wins.push(`${state.savedResources.length} ${state.savedResources.length === 1 ? 'resource is' : 'resources are'} saved to your record for when you need them.`)
+  }
+  if (state.goals.some((g) => g.progress >= 50)) {
+    wins.push('Several of your goals are past the halfway mark — steady progress, one step at a time.')
+  }
+
+  return wins.slice(0, 3)
+}
+
+// ---------------------------------------------------------------------------
 // The Family Executive Briefing — the emotional center of the product.
 // ---------------------------------------------------------------------------
 
 export interface Briefing {
   greeting: string
+  orientation: string
   narrative: string
   priorities: Insight[]
   watchouts: Insight[]
+  wins: string[]
   totalMinutes: number
   newSinceLastVisit: string[]
   lastVisitLabel: string | null
+  daysSinceLastVisit: number | null
 }
 
 export function buildBriefing(state: FamilyState, now: Date = new Date()): Briefing {
@@ -405,20 +451,36 @@ export function buildBriefing(state: FamilyState, now: Date = new Date()): Brief
   const lastVisitLabel = prev
     ? new Date(prev).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : null
+  const daysSinceLastVisit = prev
+    ? Math.round((now.getTime() - new Date(prev).getTime()) / MS_PER_DAY)
+    : null
 
   const overview = stageIdForAge(age) === 'transition' ? transitionOverview(state.checks) : null
   const narrative = overview
-    ? `Based on where ${name} is in the ${stage.title} stage — ${overview.done} of ${overview.total} preparation steps done — here’s what deserves attention this week.`
-    : `Based on where ${name} is in the ${stage.title} stage, here’s what deserves attention this week.`
+    ? `Based on where ${name} is in the ${stage.title} stage — ${overview.done} of ${overview.total} preparation steps done — here’s what deserves attention.`
+    : `Based on where ${name} is in the ${stage.title} stage, here’s what deserves attention.`
+
+  // The one-line orientation: what this family is doing right now, in plain words.
+  const orientationByStage: Record<string, string> = {
+    recognition: `Today you’re getting your bearings with ${name} — understanding what’s happening and where to start.`,
+    early: `Today you’re building ${name}’s foundation — skills, routines, and the first support team.`,
+    school: `Today you’re advocating for ${name} through the school years.`,
+    transition: `Today you’re helping ${name} prepare for adulthood.`,
+    adult: `Today you’re supporting ${name} in building an adult life — work, community, and belonging.`,
+  }
+  const orientation = orientationByStage[stageIdForAge(age)] ?? `Today you’re walking alongside ${name}.`
 
   return {
     greeting: `${timeOfDay}, ${firstName(state.parent.name)}.`,
+    orientation,
     narrative,
     priorities,
     watchouts,
+    wins: deriveWins(state, now),
     totalMinutes,
     newSinceLastVisit: newSince,
     lastVisitLabel,
+    daysSinceLastVisit,
   }
 }
 

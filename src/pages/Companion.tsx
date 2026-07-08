@@ -225,17 +225,25 @@ export default function Companion() {
   const childFirst = firstName(state.child.name)
 
   const greetingMessage: StoredMessage = useMemo(
-    () => ({
+    () => {
+      const prev = state.aiMemory.previousVisit
+      const daysAway = prev ? Math.round((Date.now() - new Date(prev).getTime()) / 86_400_000) : 0
+      const awayNote =
+        daysAway >= 7
+          ? ` It’s been ${daysAway >= 30 ? `about ${Math.round(daysAway / 30)} month${daysAway >= 60 ? 's' : ''}` : `${daysAway} days`} — I’ve kept everything current while you were away.`
+          : ''
+      return {
       id: 0,
       role: 'assistant',
       answer: {
         intro:
           state.aiMemory.topicsDiscussed.length > 0
-            ? `Welcome back, ${firstName(state.parent.name)}. I’ve kept our conversation — and everything in ${childFirst}’s record — so we never start from zero. Ask me anything, or try “what are our priorities this week?”`
+            ? `Welcome back, ${firstName(state.parent.name)}.${awayNote} I’ve kept our conversation — and everything in ${childFirst}’s record — so we never start from zero. Ask me anything, or try “what are our priorities this week?”`
             : `Hi ${firstName(state.parent.name)} — I’m your navigator, and I know where ${childFirst} is on the road. I can brief you on the week, walk through “what happens if…” scenarios, prepare you for meetings, and compare the big decisions. Try “where are we right now?”`,
         points: [],
       },
-    }),
+      }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )

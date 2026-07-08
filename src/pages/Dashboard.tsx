@@ -13,6 +13,9 @@ import {
   Clock,
   ChevronRight,
   MessageCircleHeart,
+  Check,
+  History,
+  Telescope,
 } from 'lucide-react'
 import { Card, EmptyState, ProgressBar, ProgressRing } from '../components/ui'
 import { AiInsightCard } from '../components/ai'
@@ -59,17 +62,21 @@ export default function Dashboard() {
     .slice(0, 4)
   const childFirst = firstName(child.name)
 
+  // Acknowledge time away — the product should feel alive on return.
+  const days = briefing.daysSinceLastVisit
+  const welcomeBack =
+    days !== null && days >= 7
+      ? `Welcome back — it’s been ${days >= 30 ? `about ${Math.round(days / 30)} month${days >= 60 ? 's' : ''}` : `${days} days`}. I’ve kept everything current while you were away; here’s where things stand now.`
+      : null
+
   return (
     <div className="space-y-7">
-      {/* ---- The Family Executive Briefing ---- */}
+      {/* ---- The Family Executive Briefing — the Command Center ---- */}
       <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-teal-600 to-teal-500 text-white shadow-lift">
         <div className="p-7 sm:p-9">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium">
-              <Sparkles className="h-3.5 w-3.5" /> Your briefing
-              {briefing.lastVisitLabel && (
-                <span className="text-teal-100">· last visit {briefing.lastVisitLabel}</span>
-              )}
+              <Sparkles className="h-3.5 w-3.5" /> Your daily briefing
             </div>
             {briefing.priorities.length > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-200/20 px-3 py-1 text-xs font-semibold text-amber-100">
@@ -81,10 +88,19 @@ export default function Dashboard() {
           <h1 className="mt-4 font-display text-2xl font-semibold leading-snug sm:text-3xl">
             {briefing.greeting}
           </h1>
-          <p className="mt-2 max-w-2xl text-teal-50">{briefing.narrative}</p>
+          <p className="mt-2 max-w-2xl text-lg text-white/95">{briefing.orientation}</p>
 
-          {/* Priorities */}
-          <div className="mt-5 grid gap-2.5">
+          {/* Welcome back — the product acknowledges time away */}
+          {welcomeBack && (
+            <p className="mt-3 flex items-start gap-2 text-sm text-teal-50">
+              <History className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" /> {welcomeBack}
+            </p>
+          )}
+
+          <p className="mt-4 max-w-2xl text-sm text-teal-50">{briefing.narrative}</p>
+
+          {/* Priorities — what deserves attention, ranked */}
+          <div className="mt-4 grid gap-2.5">
             {briefing.priorities.map((p) => (
               <Link
                 key={p.id}
@@ -103,11 +119,21 @@ export default function Dashboard() {
             ))}
             {briefing.priorities.length === 0 && (
               <div className="rounded-2xl bg-white/10 px-4 py-3 text-teal-50">
-                Nothing urgent this week — the road is quiet. A good day to rest, or to look one
-                stage ahead.
+                Nothing urgent right now — the road is quiet. A good day to rest, or to look ahead.
               </div>
             )}
           </div>
+
+          {/* Wins — confidence from competence, not cheerfulness */}
+          {briefing.wins.length > 0 && (
+            <div className="mt-4 grid gap-1.5">
+              {briefing.wins.map((w) => (
+                <p key={w} className="flex items-start gap-2 text-sm text-teal-50">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-sage-200" /> {w}
+                </p>
+              ))}
+            </div>
+          )}
 
           {/* New since last visit */}
           {briefing.newSinceLastVisit.map((line) => (
@@ -119,6 +145,9 @@ export default function Dashboard() {
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Link to="/companion" className="btn bg-white text-teal-700 hover:bg-teal-50">
               <MessageCircleHeart className="h-4 w-4" /> Talk it through with your navigator
+            </Link>
+            <Link to="/look-ahead" className="btn bg-teal-400/40 text-white hover:bg-teal-400/60">
+              <Telescope className="h-4 w-4" /> Look ahead
             </Link>
             {progress.total > 0 && (
               <span className="inline-flex items-center gap-2 text-sm text-teal-50">
