@@ -11,8 +11,14 @@
 //     carries the fact-vs-guidance label and the professional-consultation note.
 //   • It DEGRADES. No key → the status endpoint reports unconfigured and the
 //     client uses the deterministic engine. Any error → 500, same fallback.
+//   • It REASONS with the architecture. docs/REASONING.md is loaded at startup
+//     and fed to the model as a cached reasoning foundation — the same document
+//     that governs the whole platform drives the live model's actual thinking,
+//     so there is a single source of truth and no drift.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { loadEnv } from 'vite'
 import Anthropic from '@anthropic-ai/sdk'
@@ -32,6 +38,26 @@ TRUST LABELING: Set "kind" to "record" when the answer is built primarily from t
 STYLE OF ANSWER: Open with a direct, personalized "intro" (use the child's first name). Use "points" for a few short titled explanations, or "sections" for grouped bullet lists (agendas, option comparisons, scenarios) — use whichever fits, and leave the other empty. Offer 1–3 concrete, small "nextSteps" sized in minutes, not weekends. Prefer the least-restrictive, strengths-first framing. Reduce uncertainty; never add cognitive load.
 
 You must respond ONLY with a JSON object matching the provided schema. Do not include any prose outside the JSON.`
+
+// The reasoning foundation (docs/REASONING.md) loaded at startup and prepended
+// to the system prompt as a cached block. systemText is (re)built in
+// configResolved; it falls back to the base prompt if the doc can't be read.
+let systemText = SYSTEM_PROMPT
+
+// Which domain modules from the foundation matter most at each lifecycle stage,
+// so the model weights the right ones instead of re-reading all thirty.
+const RELEVANT_DOMAINS: Record<string, string> = {
+  recognition:
+    'Special Education, Healthcare Transition (early awareness), Insurance, Financial Planning (start early), Long-Term Planning (a letter of intent can begin now)',
+  early:
+    'IEP Planning, Special Education, Insurance, Medicaid, Financial Planning, ABLE & Special Needs Trusts (set up early), Long-Term Planning',
+  school:
+    'IEP Planning, Special Education, Transition Planning (begins mid-teens), Healthcare Transition, Insurance, Medicaid, Financial Planning',
+  transition:
+    'Transition Planning, IEP Planning, Employment, Vocational Rehabilitation, College, Independent Living, SSI, SSDI/DAC, Medicaid, Waivers, Guardianship, Supported Decision-Making, Legal Planning, ABLE, Special Needs Trusts, Healthcare Transition',
+  adult:
+    'Employment, Adult Services, Housing, Waivers, Medicaid, Community Participation, Safety, Emergency Planning, Long-Term Planning, Future Caregiving, Aging Parents, Sibling Transitions',
+}
 
 const OUTPUT_SCHEMA = {
   type: 'object',
@@ -139,8 +165,13 @@ async function generate(client: Anthropic, payload: any) {
           .join('\n')
       : '(none yet)'
 
+  const relevant = RELEVANT_DOMAINS[facts?.stageId] ?? ''
+  const stageHint = relevant
+    ? `\nMost relevant reasoning modules for this family right now (from the Reasoning Foundation): ${relevant}.`
+    : ''
+
   const userContent = `FACT SHEET (the only source of concrete facts about this family):
-${factSheet(facts)}
+${factSheet(facts)}${stageHint}
 
 REFERENCE ANSWER (the platform's deterministic engine already answered this question — use it as your grounding; you may rephrase, deepen, and personalize, but do not contradict its facts):
 ${JSON.stringify(grounding, null, 2)}
@@ -159,7 +190,9 @@ Respond with the JSON object only.`
   const body = {
     model: MODEL,
     max_tokens: 2048,
-    system: SYSTEM_PROMPT,
+    // The reasoning foundation is a large, stable prefix — cache it so it's
+    // paid for once, then read cheaply on every subsequent turn.
+    system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
     output_config: { format: { type: 'json_schema', schema: OUTPUT_SCHEMA }, effort: 'medium' },
     messages: [{ role: 'user', content: userContent }],
   }
@@ -186,6 +219,23 @@ export function navigatorPlugin(): Plugin {
       const env = loadEnv(config.mode, process.cwd(), '')
       apiKey = env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || ''
       if (apiKey) client = new Anthropic({ apiKey })
+
+      // Load the reasoning architecture so the live model reasons with it.
+      // Best-effort: if the doc isn't present, the base prompt still works.
+      try {
+        const doc = readFileSync(resolve(config.root || process.cwd(), 'docs/REASONING.md'), 'utf8')
+        systemText = `${SYSTEM_PROMPT}
+
+=== REASONING FOUNDATION ===
+Reason in accordance with the architecture below. It is how our best multidisciplinary team thinks: the reasoning loop, the expert panel, the confidence ladder, the domain modules, and the cross-domain knowledge graph. It teaches METHOD — it is never a source of this family's facts (use only the fact sheet and reference answer for those), and its benefit/legal specifics are marked "verify" precisely because you must not state them as settled.
+
+${doc}
+=== END REASONING FOUNDATION ===
+
+Reminder: rely only on the fact sheet and reference answer for concrete facts about this family. Trace the knowledge-graph edges and surface the dependency they didn't ask about but most need to see. Respond ONLY with the JSON object matching the schema.`
+      } catch {
+        systemText = SYSTEM_PROMPT
+      }
     },
     configureServer(server) {
       server.middlewares.use('/api/navigator/status', (_req, res) => {
