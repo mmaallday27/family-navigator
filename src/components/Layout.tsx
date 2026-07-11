@@ -14,8 +14,12 @@ import {
   RotateCcw,
   Telescope,
   History,
+  Download,
+  LogOut,
 } from 'lucide-react'
 import { cx } from '../lib/cx'
+import { exportUrl } from '../api'
+import { useAuth } from '../store/AuthContext'
 import { useFamily } from '../store/FamilyContext'
 import { firstName, getAge, initials, stageIdForAge } from '../store/selectors'
 import { journeyStages } from '../data/journey'
@@ -50,6 +54,7 @@ const navGroups = [
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { state, dispatch } = useFamily()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const age = getAge(state.child)
   const inTransition = stageIdForAge(age) === 'transition'
@@ -57,12 +62,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const startOver = () => {
     if (
       window.confirm(
-        'Start over with a different family? Your current setup and progress on this device will be cleared.',
+        'Start over with a fresh record? Your current setup and progress will be cleared from your account.',
       )
     ) {
       dispatch({ type: 'reset' })
       navigate('/welcome')
     }
+  }
+
+  const signOut = async () => {
+    await logout()
+    navigate('/auth')
   }
 
   return (
@@ -142,26 +152,48 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </p>
       </div>
 
-      {/* Family chip */}
-      <div className="flex items-center gap-3 border-t border-line px-6 py-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-600">
-          {initials(state.parent.name) || '?'}
+      {/* Family chip + account actions */}
+      <div className="border-t border-line px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-600">
+            {initials(state.parent.name) || '?'}
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="truncate text-sm font-semibold text-ink">{state.parent.name}</p>
+            <p className="truncate text-xs text-ink-faint">
+              Caring for {firstName(state.child.name)}
+              {state.isDemo && ' · sample family'}
+            </p>
+          </div>
+          <button
+            onClick={startOver}
+            className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+            title="Start over with a fresh record"
+            aria-label="Start over with a fresh record"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
         </div>
-        <div className="min-w-0 flex-1 leading-tight">
-          <p className="truncate text-sm font-semibold text-ink">{state.parent.name}</p>
-          <p className="truncate text-xs text-ink-faint">
-            Caring for {firstName(state.child.name)}
-            {state.isDemo && ' · sample family'}
-          </p>
-        </div>
-        <button
-          onClick={startOver}
-          className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
-          title="Start over with a different family"
-          aria-label="Start over with a different family"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
+        {user && (
+          <div className="mt-2 flex items-center justify-between gap-2 pl-12 text-xs">
+            <span className="truncate text-ink-faint" title={user.email}>{user.email}</span>
+            <div className="flex shrink-0 items-center gap-1">
+              <a
+                href={exportUrl}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+                title="Export all your data"
+              >
+                <Download className="h-3.5 w-3.5" /> Export
+              </a>
+              <button
+                onClick={signOut}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+              >
+                <LogOut className="h-3.5 w-3.5" /> Sign out
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

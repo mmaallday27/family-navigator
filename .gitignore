@@ -7,12 +7,13 @@ dist-ssr
 .env
 .env.local
 
+# Local database + uploaded document bytes (per-device dev data)
+server/data/
+
 # TS composite build artifacts
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
-vite-plugin-navigator.js
-vite-plugin-navigator.d.ts
 .DS_Store
 .vscode/*
 !.vscode/extensions.json

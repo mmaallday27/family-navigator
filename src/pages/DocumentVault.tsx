@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   FolderHeart,
   FileText,
@@ -6,15 +6,16 @@ import {
   AlertCircle,
   Search,
   Download,
-  MoreHorizontal,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader, Card, EmptyState, Modal } from '../components/ui'
 import { AiNote, SourceBadge, WhyThisMatters } from '../components/ai'
-import { docCategories } from '../data/documents'
+import { docCategories, type DocFile } from '../data/documents'
 import { useFamily } from '../store/FamilyContext'
 import { firstName } from '../store/selectors'
 import { analyzeDocument, type DocumentAnalysis } from '../intelligence/documents'
 import { vaultGaps } from '../intelligence/insights'
+import { apiDeleteDocument, apiUploadDocument, documentContentUrl, fileToBase64 } from '../api'
 import { cx, accentChip } from '../lib/cx'
 
 export default function DocumentVault() {
@@ -25,6 +26,10 @@ export default function DocumentVault() {
   const [showUpload, setShowUpload] = useState(false)
   const [uploadName, setUploadName] = useState('')
   const [uploadCat, setUploadCat] = useState(docCategories[0].id)
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [analysis, setAnalysis] = useState<{ docName: string; result: DocumentAnalysis } | null>(null)
 
   const filtered = useMemo(() => {
@@ -39,18 +44,57 @@ export default function DocumentVault() {
   const catName = (id: string) => docCategories.find((c) => c.id === id)?.name ?? id
   const catColor = (id: string) => docCategories.find((c) => c.id === id)?.color ?? 'teal'
 
-  const addDocument = () => {
-    const name = uploadName.trim()
-    if (!name) return
+  const resetUpload = () => {
+    setUploadName('')
+    setFile(null)
+    setUploadError(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const humanSize = (bytes: number) =>
+    bytes < 1024 ? `${bytes} B` : bytes < 1_048_576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1_048_576).toFixed(1)} MB`
+
+  const addDocument = async () => {
+    const name = uploadName.trim() || file?.name?.trim() || ''
+    if (!name || busy) return
+    setBusy(true)
+    setUploadError(null)
     // The intelligent part: the platform reads what kind of moment this
     // document is and responds — analysis modal + record updates.
     const result = analyzeDocument(name, uploadCat, state)
-    dispatch({ type: 'add-document', name, categoryId: uploadCat })
-    setUploadName('')
-    setShowUpload(false)
-    setActiveCat('all')
-    setQuery('')
-    setAnalysis({ docName: name, result })
+    try {
+      if (file) {
+        // Real bytes: store them server-side, then file the returned id/size.
+        const dataBase64 = await fileToBase64(file)
+        const saved = await apiUploadDocument(name, file.type || 'application/octet-stream', dataBase64)
+        dispatch({
+          type: 'add-document',
+          name,
+          categoryId: uploadCat,
+          id: saved.id,
+          size: humanSize(saved.size),
+          hasFile: true,
+        })
+      } else {
+        // Metadata-only entry (no file chosen) — still tracked in the record.
+        dispatch({ type: 'add-document', name, categoryId: uploadCat })
+      }
+      setShowUpload(false)
+      resetUpload()
+      setActiveCat('all')
+      setQuery('')
+      setAnalysis({ docName: name, result })
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeDocument = async (doc: DocFile) => {
+    if (!window.confirm(`Remove “${doc.name}” from the vault?`)) return
+    if (doc.hasFile) await apiDeleteDocument(doc.id).catch(() => {})
+    dispatch({ type: 'remove-document', id: doc.id })
   }
 
   const gaps = vaultGaps(state)
@@ -219,11 +263,23 @@ export default function DocumentVault() {
                   {f.note && <p className="mt-0.5 text-xs text-amber-600">{f.note}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <button className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft" aria-label={`Download ${f.name}`}>
-                    <Download className="h-4 w-4" />
-                  </button>
-                  <button className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft" aria-label={`More options for ${f.name}`}>
-                    <MoreHorizontal className="h-4 w-4" />
+                  {f.hasFile && (
+                    <a
+                      href={documentContentUrl(f.id)}
+                      className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+                      title={`Download ${f.name}`}
+                      aria-label={`Download ${f.name}`}
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => removeDocument(f)}
+                    className="rounded-lg p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-500"
+                    aria-label={`Remove ${f.name}`}
+                    title={`Remove ${f.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </li>
@@ -232,12 +288,41 @@ export default function DocumentVault() {
         )}
       </Card>
 
-      {/* Upload workflow — adds a real entry to the family record */}
-      <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Add a document">
+      {/* Upload workflow — stores real file bytes on the server */}
+      <Modal
+        open={showUpload}
+        onClose={() => {
+          setShowUpload(false)
+          resetUpload()
+        }}
+        title="Add a document"
+      >
         <p className="mt-1 text-sm text-ink-soft">
-          Name it and file it in the right category so it’s ready when you need it. (Prototype — the
-          entry is saved to your record; no file is actually stored.)
+          Choose a file to store securely in your record, or add a named placeholder if the document
+          isn’t handy yet. Either way it’s filed and ready for the moment you need it.
         </p>
+
+        <div className="mt-4">
+          <label className="block cursor-pointer rounded-2xl border-2 border-dashed border-line bg-canvas/40 p-5 text-center hover:border-teal-300">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                setFile(f)
+                if (f && !uploadName.trim()) setUploadName(f.name)
+              }}
+            />
+            <UploadCloud className="mx-auto h-6 w-6 text-teal-500" />
+            <p className="mt-2 text-sm font-medium text-ink">
+              {file ? file.name : 'Choose a file'}
+            </p>
+            <p className="text-xs text-ink-faint">
+              {file ? `${humanSize(file.size)} · click to change` : 'PDF, image, or document · up to 10 MB'}
+            </p>
+          </label>
+        </div>
 
         <div className="mt-4">
           <label className="block">
@@ -273,12 +358,24 @@ export default function DocumentVault() {
           </div>
         </div>
 
+        {uploadError && (
+          <p className="mt-4 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-500" role="alert">
+            {uploadError}
+          </p>
+        )}
+
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setShowUpload(false)} className="btn-soft">
+          <button
+            onClick={() => {
+              setShowUpload(false)
+              resetUpload()
+            }}
+            className="btn-soft"
+          >
             Cancel
           </button>
-          <button onClick={addDocument} disabled={!uploadName.trim()} className="btn-primary">
-            <UploadCloud className="h-4 w-4" /> Add to vault
+          <button onClick={addDocument} disabled={busy || (!uploadName.trim() && !file)} className="btn-primary">
+            <UploadCloud className="h-4 w-4" /> {busy ? 'Saving…' : 'Add to vault'}
           </button>
         </div>
       </Modal>

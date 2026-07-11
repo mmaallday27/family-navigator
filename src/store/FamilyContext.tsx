@@ -1,8 +1,8 @@
 // The family store — the single source of truth for who this family is and
 // everything they've done. "Continuity is the product": all interactive state
-// (profile, checklists, goals, documents, saved resources) lives here and
-// persists to localStorage, so the platform remembers and the family doesn't
-// have to.
+// (profile, checklists, goals, documents, saved resources) lives here and now
+// persists to the SERVER, per account — so the record follows the family across
+// devices, not just one browser.
 
 import {
   createContext,
@@ -11,12 +11,15 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type Dispatch,
   type ReactNode,
 } from 'react'
 import type { DocFile } from '../data/documents'
 import type { CompanionResponse } from '../data/companion'
 import { allChecklistItems } from '../data/transition'
+import { apiGetFamily, apiPutFamily } from '../api'
+import { useAuth } from './AuthContext'
 
 export interface ChildProfile {
   name: string
@@ -105,14 +108,15 @@ export type FamilyAction =
     }
   | { type: 'toggle-check'; id: string }
   | { type: 'toggle-saved'; id: string }
-  | { type: 'add-document'; name: string; categoryId: string }
+  | { type: 'add-document'; name: string; categoryId: string; id?: string; size?: string; hasFile?: boolean }
+  | { type: 'remove-document'; id: string }
   | { type: 'visit'; at: string }
   | { type: 'companion-topic'; topic: string }
   | { type: 'set-companion-messages'; messages: StoredMessage[] }
   | { type: 'dismiss-insight'; id: string }
+  | { type: 'hydrate'; state: FamilyState }
   | { type: 'reset' }
 
-const STORAGE_KEY = 'family-navigator/state/v2'
 const VERSION = 3
 
 const emptyAiMemory: AiMemory = {
@@ -201,7 +205,7 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
     }
     case 'add-document': {
       const doc: DocFile = {
-        id: `u${Date.now()}`,
+        id: action.id ?? `u${Date.now()}`,
         name: action.name,
         categoryId: action.categoryId,
         date: new Date().toLocaleDateString('en-US', {
@@ -209,7 +213,8 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
           day: 'numeric',
           year: 'numeric',
         }),
-        size: '—',
+        size: action.size ?? '—',
+        hasFile: action.hasFile,
       }
       return {
         ...state,
@@ -217,6 +222,11 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
         activity: addActivity(state, `Added “${action.name}” to the Document Vault`),
       }
     }
+    case 'remove-document':
+      return {
+        ...state,
+        documents: state.documents.filter((d) => d.id !== action.id),
+      }
     case 'visit':
       return {
         ...state,
@@ -249,6 +259,8 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
           dismissedInsights: [...state.aiMemory.dismissedInsights, action.id],
         },
       }
+    case 'hydrate':
+      return action.state
     case 'reset':
       return initialState
     default:
@@ -256,54 +268,100 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
   }
 }
 
-function loadState(): FamilyState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return initialState
-    const parsed = JSON.parse(raw) as Partial<FamilyState>
-    if (typeof parsed?.onboarded !== 'boolean') return initialState
-    // v2 records predate the intelligence layer — upgrade them in place so
-    // nobody loses their family record.
-    if (parsed.version !== 2 && parsed.version !== VERSION) return initialState
-    return {
-      ...initialState,
-      ...parsed,
-      version: VERSION,
-      activity: parsed.activity ?? [],
-      aiMemory: { ...emptyAiMemory, ...(parsed.aiMemory ?? {}) },
-    }
-  } catch {
-    return initialState
+/** Normalize a server-loaded record into a complete FamilyState. */
+function fromServer(record: Partial<FamilyState>): FamilyState {
+  return {
+    ...initialState,
+    ...record,
+    version: VERSION,
+    activity: record.activity ?? [],
+    aiMemory: { ...emptyAiMemory, ...(record.aiMemory ?? {}) },
   }
 }
 
 interface FamilyContextValue {
   state: FamilyState
   dispatch: Dispatch<FamilyAction>
+  /** True while the record is being loaded from the server after sign-in. */
+  loading: boolean
 }
 
 const FamilyContext = createContext<FamilyContextValue | null>(null)
 
 export function FamilyProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadState)
+  const { user, loading: authLoading } = useAuth()
+  const [state, dispatch] = useReducer(reducer, initialState)
+  const [loading, setLoading] = useState(true)
+  const loadedRef = useRef(false)
+  const visitedRef = useRef(false)
+  const onboardedRef = useRef(false)
 
-  // Record this visit once per session — powers "since your last visit".
-  const visited = useRef(false)
+  // Hydrate the record from the server once the signed-in account is known.
   useEffect(() => {
-    if (visited.current) return
-    visited.current = true
-    dispatch({ type: 'visit', at: new Date().toISOString() })
-  }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      // Storage may be unavailable (private mode); the app still works for the session.
+    if (authLoading) return
+    let cancelled = false
+    if (!user) {
+      // Signed out: clear any in-memory record so nothing leaks to the next user.
+      loadedRef.current = false
+      visitedRef.current = false
+      onboardedRef.current = false
+      dispatch({ type: 'reset' })
+      setLoading(false)
+      return
     }
-  }, [state])
+    setLoading(true)
+    apiGetFamily()
+      .then((record) => {
+        if (cancelled) return
+        dispatch(record ? { type: 'hydrate', state: fromServer(record) } : { type: 'reset' })
+        // Track whether the loaded record is already onboarded, so we can
+        // persist the first onboarding write immediately (see below).
+        onboardedRef.current = !!record?.onboarded
+      })
+      .catch(() => {
+        if (!cancelled) {
+          dispatch({ type: 'reset' })
+          onboardedRef.current = false
+        }
+      })
+      .finally(() => {
+        if (cancelled) return
+        loadedRef.current = true
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user, authLoading])
 
-  const value = useMemo(() => ({ state, dispatch }), [state])
+  // Record this visit once, after hydration — powers "since your last visit".
+  useEffect(() => {
+    if (loading || !loadedRef.current || visitedRef.current || !user) return
+    visitedRef.current = true
+    dispatch({ type: 'visit', at: new Date().toISOString() })
+  }, [loading, user])
+
+  // Persist to the server on change, only after a real load so the empty
+  // initial state can never overwrite a hydrated record. Onboarding (the
+  // false→true transition) is written IMMEDIATELY — a reload right after
+  // sign-up must never lose the brand-new record. Other changes debounce.
+  useEffect(() => {
+    if (!user || loading || !loadedRef.current) return
+    const justOnboarded = state.onboarded && !onboardedRef.current
+    onboardedRef.current = state.onboarded
+    if (justOnboarded) {
+      apiPutFamily(state).catch(() => {})
+      return
+    }
+    const handle = window.setTimeout(() => {
+      apiPutFamily(state).catch(() => {
+        // Transient failure — the next change retries; the app stays usable.
+      })
+    }, 400)
+    return () => window.clearTimeout(handle)
+  }, [state, user, loading])
+
+  const value = useMemo(() => ({ state, dispatch, loading }), [state, loading])
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>
 }
 

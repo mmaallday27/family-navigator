@@ -13,6 +13,8 @@ export interface DocFile {
   size: string
   flagged?: boolean // needs attention / expiring
   note?: string
+  /** True when real file bytes are stored on the server and downloadable. */
+  hasFile?: boolean
 }
 
 export const docCategories: DocCategory[] = [

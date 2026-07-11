@@ -80,27 +80,38 @@ For production (a static host, where the dev middleware doesn't run), port the `
 
 Light, warm, calm, and accessible — the opposite of a dark AI dashboard. Parents should feel **calmer** after opening the product, not more overwhelmed. Keyboard-visible focus rings, labelled dialogs with Escape/focus handling, live-region chat, and `prefers-reduced-motion` support throughout.
 
-## Architecture
+## Full-stack architecture
+
+It's a real full-stack app: a React client and an Express backend with a real database, accounts, and file storage — no cloud services required to run it.
 
 ```
+server/            The backend (Express + node:sqlite, run via tsx)
+  index.ts         App wiring; serves /api and, in prod, the built client
+  db.ts            Schema + connection (built-in SQLite; porting to Postgres is a driver swap)
+  auth.ts          bcrypt-hashed passwords, server-side sessions, HTTP-only cookies
+  family.ts        The per-account family record (cross-device persistence)
+  documents.ts     Real document byte storage (upload / download / delete)
+  export.ts        Full data export — the family owns their data
+  navigator.ts     The grounded AI navigator (moved here from the old Vite plugin)
+
 src/
-  store/         FamilyContext (persistent state incl. AI memory + activity log)
-                 + selectors (all derived data)
-  ai/            Live-model layer: client proxy caller, grounding context
-                 builder, wire types (server proxy is vite-plugin-navigator.ts)
-  intelligence/  The reasoning engine: insights & briefing (with wins),
-                 look-ahead horizons & timeline, document analysis,
-                 scenarios, meeting kits, decision support
-  data/          Pure content: journey stages, transition tracks, companion
-                 knowledge, resources (with matching metadata), sample family
-  components/    Layout, shared UI primitives, and the AI visual language
-                 (source badges, insight cards, contextual notes)
-  pages/         Onboarding, Dashboard (Command Center), JourneyMap, LookAhead,
-                 Timeline, TransitionNavigator, Companion, DocumentVault,
-                 ResourceNavigator, FamilyCircle
+  api.ts           Typed client gateway to the backend (cookies + clean errors)
+  store/           AuthContext (accounts) + FamilyContext (record, now server-persisted)
+                   + selectors (all derived data)
+  ai/              Live-model client: proxy caller, grounding context builder, wire types
+  intelligence/    The reasoning engine: insights & briefing, look-ahead & timeline,
+                   document analysis, scenarios, meeting kits, decision support
+  data/            Pure content: journey stages, transition tracks, companion knowledge,
+                   resources (with matching metadata), sample family
+  components/       Layout, shared UI primitives, and the AI visual language
+  pages/            Auth, Onboarding, Dashboard (Command Center), JourneyMap, LookAhead,
+                    Timeline, TransitionNavigator, Companion, DocumentVault,
+                    ResourceNavigator, FamilyCircle
 ```
 
-React + Vite + TypeScript + Tailwind CSS · React Router · lucide-react. All content is illustrative; no backend, auth, or billing. State persists per-device in localStorage.
+React + Vite + TypeScript + Tailwind · Express + `node:sqlite` + bcrypt · React Router · lucide-react. Requires **Node 22+** (built-in SQLite). All content is illustrative; the record and uploaded files are stored server-side per account and are fully exportable and deletable.
+
+**Auth & persistence.** Real accounts (email + bcrypt-hashed password), server-side sessions delivered over an HTTP-only cookie, and a per-account family record that follows the family across devices — the store loads from and writes to the backend, not localStorage. Documents are stored as real bytes with working upload and download. One endpoint exports the entire record plus every file. The AI navigator's key stays server-side and the SDK never reaches the browser.
 
 ## The permanent documents
 
@@ -111,11 +122,14 @@ Two strategy documents in [`docs/`](docs/) are the decade-scale foundation the c
 
 ## Run it
 
+Requires **Node 22+** (for the built-in SQLite).
+
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # type-check + production build
-npm run preview  # preview the production build
+npm run dev      # runs BOTH the backend (:8787) and the client (:5173);
+                 # open http://localhost:5173 — /api is proxied to the backend
+npm run build    # type-check + production build of the client
+npm start        # production: serves the built client + /api from one server (:8787)
 ```
 
-Use the ↺ button next to your name in the sidebar to reset and go through onboarding again.
+`npm run dev` starts the API and the client together; sign up (any email + an 8-character password) to create an account. Turn on the live AI by adding `ANTHROPIC_API_KEY` to a `.env` file (see `.env.example`) — without it the deterministic engine answers. The dev database lives at `server/data/` (git-ignored). Use the ↺ button next to your name to start a fresh record, **Export** to download all your data, and **Sign out** to switch accounts.
