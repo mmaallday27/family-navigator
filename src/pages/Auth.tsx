@@ -3,6 +3,7 @@
 // friction beyond an email and a password. Real accounts, real sessions.
 
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { Compass, Heart, ArrowRight } from 'lucide-react'
 import { useAuth } from '../store/AuthContext'
 
@@ -85,7 +86,7 @@ export default function Auth() {
           </label>
 
           {error && (
-            <p className="rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-500" role="alert">
+            <p className="rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700" role="alert">
               {error}
             </p>
           )}
@@ -111,8 +112,17 @@ export default function Auth() {
         </p>
 
         <p className="mt-6 text-center text-xs text-ink-faint">
-          A prototype. All content is illustrative. Your record is stored on this server and is yours
-          to export or delete at any time.
+          A pilot. Your record is stored securely in your account and is yours to export or delete
+          at any time.
+        </p>
+        <p className="mt-2 text-center text-xs text-ink-faint">
+          <Link to="/privacy" className="underline hover:text-ink-soft">
+            How we handle your family’s data
+          </Link>{' '}
+          ·{' '}
+          <Link to="/terms" className="underline hover:text-ink-soft">
+            What this product is (and isn’t)
+          </Link>
         </p>
       </main>
     </div>

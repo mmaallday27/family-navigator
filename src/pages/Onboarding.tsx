@@ -2,38 +2,84 @@
 // where to start" into "I finally understand the road ahead" — then hands the
 // family a home base personalized to their child's stage and their concerns.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, Compass, Heart, MapPin, Sparkles } from 'lucide-react'
 import { cx } from '../lib/cx'
 import { useFamily, type ChildProfile, type Goal } from '../store/FamilyContext'
 import {
+  ageFromMonthYear,
+  birthYearOptions,
   concernOptions,
   firstName,
   interestOptions,
+  monthOptions,
   stageIdForAge,
   strengthOptions,
 } from '../store/selectors'
 import { journeyStages } from '../data/journey'
+import { stateGuidanceFor, supportedStates } from '../data/stateRegistry'
 import {
   demoChecks,
   demoChild,
   demoDocuments,
   demoGoals,
+  demoLocation,
   demoParent,
   demoSavedResources,
 } from '../data/demoFamily'
 
 type Step = 'welcome' | 'about' | 'focus' | 'road'
 
+// Mirror the in-progress form to sessionStorage so an accidental refresh
+// never loses what a parent has typed. Cleared once onboarding completes.
+const DRAFT_KEY = 'fn-onboarding-draft'
+
+interface OnboardingDraft {
+  step: Step
+  parentName: string
+  childName: string
+  birthMonth: number | ''
+  birthYear: number | ''
+  diagnosis: string
+  concerns: string[]
+  strengths: string[]
+  interests: string[]
+  locState?: string
+  county?: string
+  zip?: string
+  consent?: boolean
+}
+
+function loadDraft(): OnboardingDraft | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    return raw ? (JSON.parse(raw) as OnboardingDraft) : null
+  } catch {
+    return null
+  }
+}
+
+function clearDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT_KEY)
+  } catch {
+    // Storage unavailable — nothing to clear.
+  }
+}
+
 function StepDots({ step }: { step: Step }) {
   const order: Step[] = ['welcome', 'about', 'focus', 'road']
   const idx = order.indexOf(step)
   return (
-    <div className="flex items-center gap-2" aria-hidden>
+    <div className="flex items-center gap-2">
+      <span className="sr-only">
+        Step {idx + 1} of {order.length}
+      </span>
       {order.map((s, i) => (
         <span
           key={s}
+          aria-hidden
           className={cx(
             'h-1.5 rounded-full transition-all duration-300',
             i === idx ? 'w-6 bg-teal-500' : i < idx ? 'w-1.5 bg-teal-300' : 'w-1.5 bg-line',
@@ -75,18 +121,51 @@ function ChipToggle({
 export default function Onboarding() {
   const { state, dispatch } = useFamily()
   const navigate = useNavigate()
-  const [step, setStep] = useState<Step>('welcome')
 
-  // Form state
-  const [parentName, setParentName] = useState('')
-  const [childName, setChildName] = useState('')
-  const [childAge, setChildAge] = useState<number | ''>('')
-  const [diagnosis, setDiagnosis] = useState('')
-  const [concerns, setConcerns] = useState<string[]>([])
-  const [strengths, setStrengths] = useState<string[]>([])
-  const [interests, setInterests] = useState<string[]>([])
+  // Form state — restored from the session draft if a refresh interrupted it.
+  const [draft] = useState(loadDraft)
+  const [step, setStep] = useState<Step>(draft?.step ?? 'welcome')
+  const [parentName, setParentName] = useState(draft?.parentName ?? '')
+  const [childName, setChildName] = useState(draft?.childName ?? '')
+  const [birthMonth, setBirthMonth] = useState<number | ''>(draft?.birthMonth ?? '')
+  const [birthYear, setBirthYear] = useState<number | ''>(draft?.birthYear ?? '')
+  const [diagnosis, setDiagnosis] = useState(draft?.diagnosis ?? '')
+  const [concerns, setConcerns] = useState<string[]>(draft?.concerns ?? [])
+  const [strengths, setStrengths] = useState<string[]>(draft?.strengths ?? [])
+  const [interests, setInterests] = useState<string[]>(draft?.interests ?? [])
+  const [locState, setLocState] = useState(draft?.locState ?? '')
+  const [county, setCounty] = useState(draft?.county ?? '')
+  const [zip, setZip] = useState(draft?.zip ?? '')
+  const [consent, setConsent] = useState(draft?.consent ?? false)
 
-  const age = childAge === '' ? null : childAge
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          step,
+          parentName,
+          childName,
+          birthMonth,
+          birthYear,
+          diagnosis,
+          concerns,
+          strengths,
+          interests,
+          locState,
+          county,
+          zip,
+          consent,
+        } satisfies OnboardingDraft),
+      )
+    } catch {
+      // Storage unavailable — typing just won't survive a refresh.
+    }
+  }, [step, parentName, childName, birthMonth, birthYear, diagnosis, concerns, strengths, interests, locState, county, zip, consent])
+
+  const yearChoices = useMemo(() => birthYearOptions(), [])
+  const chosenGuidance = stateGuidanceFor(locState)
+  const age = birthMonth === '' || birthYear === '' ? null : ageFromMonthYear(birthMonth, birthYear)
   const stageId = age === null ? null : stageIdForAge(age)
   const stage = journeyStages.find((s) => s.id === stageId)
 
@@ -106,7 +185,11 @@ export default function Onboarding() {
       checks: demoChecks,
       documents: demoDocuments,
       savedResources: demoSavedResources,
+      location: demoLocation,
+      // Exploring with the sample family still uses the product — same terms.
+      consentAcknowledgedAt: new Date().toISOString(),
     })
+    clearDraft()
     navigate('/')
   }
 
@@ -126,12 +209,12 @@ export default function Onboarding() {
   )
 
   const finish = () => {
-    if (!aboutValid || age === null) return
-    const now = new Date()
+    if (!aboutValid || birthMonth === '' || birthYear === '' || !consent) return
     const child: ChildProfile = {
       name: childName.trim(),
-      // Approximate birth date from age — refined later in a full profile.
-      birthDate: `${now.getFullYear() - age}-${String(now.getMonth() + 1).padStart(2, '0')}-01`,
+      // The real birth month & year, anchored to the 1st — every projected
+      // legal date downstream is derived from this.
+      birthDate: `${birthYear}-${String(birthMonth).padStart(2, '0')}-01`,
       diagnosis: diagnosis.trim(),
       diagnosedAt: '',
       strengths,
@@ -149,7 +232,14 @@ export default function Onboarding() {
       checks: {},
       documents: [],
       savedResources: [],
+      location: {
+        state: locState,
+        county: locState ? county.trim() : '',
+        zip: locState ? zip.trim() : '',
+      },
+      consentAcknowledgedAt: new Date().toISOString(),
     })
+    clearDraft()
     navigate('/')
   }
 
@@ -200,7 +290,8 @@ export default function Onboarding() {
               </button>
             </div>
             <p className="mt-6 text-xs text-ink-faint">
-              Everything stays on this device in this prototype. No account needed.
+              Your family’s record is stored securely in your account and follows you across
+              devices. It’s yours — export or delete it whenever you choose.
             </p>
           </div>
         )}
@@ -231,18 +322,43 @@ export default function Onboarding() {
                   className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
                 />
               </label>
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Their age</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={40}
-                  value={childAge}
-                  onChange={(e) => setChildAge(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
-                  placeholder="e.g. 15"
-                  className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
-                />
-              </label>
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">When they were born</span>
+                <div className="mt-1.5 flex gap-2">
+                  <select
+                    value={birthMonth}
+                    onChange={(e) => setBirthMonth(e.target.value === '' ? '' : Number(e.target.value))}
+                    aria-label="Birth month"
+                    className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+                  >
+                    <option value="">Month</option>
+                    {monthOptions.map((m, i) => (
+                      <option key={m} value={i + 1}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={birthYear}
+                    onChange={(e) => setBirthYear(e.target.value === '' ? '' : Number(e.target.value))}
+                    aria-label="Birth year"
+                    className="w-28 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+                  >
+                    <option value="">Year</option>
+                    {yearChoices.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {age !== null && (
+                  <p className="mt-1.5 text-xs text-ink-faint">
+                    So {firstName(childName) ? `${firstName(childName)} is` : 'they’re'} {age} now — we use this to keep
+                    every legal date accurate.
+                  </p>
+                )}
+              </div>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Diagnosis (optional)</span>
                 <input
@@ -252,6 +368,57 @@ export default function Onboarding() {
                   className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
                 />
               </label>
+
+              {/* Where you live — drives state-aware guidance. Told, never inferred. */}
+              <div className="sm:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                  Where you live (optional)
+                </span>
+                <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                  <select
+                    value={locState}
+                    onChange={(e) => setLocState(e.target.value)}
+                    aria-label="State"
+                    className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+                  >
+                    <option value="">Prefer not to say</option>
+                    {supportedStates.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  {locState !== '' && (
+                    <>
+                      <input
+                        value={county}
+                        onChange={(e) => setCounty(e.target.value)}
+                        placeholder="County"
+                        aria-label="County"
+                        className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
+                      />
+                      <input
+                        value={zip}
+                        onChange={(e) => setZip(e.target.value)}
+                        placeholder="ZIP (optional)"
+                        aria-label="ZIP code"
+                        inputMode="numeric"
+                        className="w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300 sm:w-32"
+                      />
+                    </>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-ink-faint">
+                  We ask because services and deadlines differ by state and county. It’s never
+                  inferred — you tell us, or you skip it.
+                </p>
+                {chosenGuidance && (
+                  <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs leading-relaxed text-teal-700 animate-fade-in">
+                    {chosenGuidance.displayName} is our first deeply-mapped state — your guidance
+                    will be grounded in {chosenGuidance.displayName}’s actual systems.
+                  </p>
+                )}
+              </div>
             </div>
 
             {stage && (
@@ -396,11 +563,35 @@ export default function Onboarding() {
               </div>
             )}
 
+            {/* Data-use acknowledgement — required before the record is created. */}
+            <label className="card mt-6 flex cursor-pointer items-start gap-3 p-4 text-left">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-teal-600"
+              />
+              <span className="text-sm leading-relaxed text-ink-soft">
+                I understand Family Navigator stores my family’s information securely in my
+                account, uses it to personalize guidance (including AI-generated guidance), and
+                that I can export or delete everything at any time. This is a pilot — guidance is
+                educational, not medical or legal advice. See our{' '}
+                <Link to="/privacy" className="font-medium text-teal-600 hover:underline">
+                  privacy practices
+                </Link>{' '}
+                and{' '}
+                <Link to="/terms" className="font-medium text-teal-600 hover:underline">
+                  terms
+                </Link>
+                .
+              </span>
+            </label>
+
             <div className="mt-6 flex items-center justify-between">
               <button onClick={() => setStep('focus')} className="btn-soft">
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
-              <button onClick={finish} className="btn-primary px-6 py-3">
+              <button onClick={finish} disabled={!consent} className="btn-primary px-6 py-3">
                 Open your home base <ArrowRight className="h-4 w-4" />
               </button>
             </div>

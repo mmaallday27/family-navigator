@@ -12,6 +12,8 @@ export interface NavigatorFacts {
   parentFirst: string
   age: number
   diagnosis: string
+  /** 'Rockland County, NY' style — '' when the family hasn't shared it. */
+  location: string
   stageId: string
   stageTitle: string
   strengths: string[]

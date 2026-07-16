@@ -46,12 +46,12 @@ npm run dev               # the Companion header now shows "Live AI"
 
 How it's built, and why it's safe:
 
-- **The key never reaches the browser.** A Vite dev-server plugin (`vite-plugin-navigator.ts`) holds the key in Node and exposes a same-origin proxy at `/api/navigator`. The client (`src/ai/client.ts`) only ever calls that proxy. The Anthropic SDK is never bundled into the client (the browser bundle size is unchanged).
+- **The key never reaches the browser.** The backend (`server/navigator.ts`) holds the key in Node and exposes a same-origin proxy at `/api/navigator`. The client (`src/ai/client.ts`) only ever calls that proxy. The Anthropic SDK is never bundled into the client (the browser bundle size is unchanged).
 - **The model is grounded, so it can't fabricate.** Every request carries a fact sheet built from the family record (`src/ai/buildContext.ts`) *and the deterministic engine's own answer to the same question* as reference material. The model reasons over real facts — dates, progress, documents, deadlines — rather than inventing them (`claude-opus-4-8`, structured output via `output_config.format`).
 - **The trust layer survives generation.** Output is forced to a schema that carries the record-vs-guidance label and the professional-consultation note; the system prompt encodes the constitution's voice and never-fabricate / route-to-a-professional doctrines.
 - **It degrades gracefully.** No key → the status endpoint reports unconfigured and the deterministic engine answers (the app is fully usable offline, the build stays green). Any request failure → the client falls back to the deterministic answer it already computed. The Companion badge shows **Live AI** or **Guided** so you always know which is answering.
 
-For production (a static host, where the dev middleware doesn't run), port the `generate()` logic from `vite-plugin-navigator.ts` into a serverless function at `/api/navigator` with the same request/response contract (`src/ai/types.ts`) — the client needs no changes.
+In production the same endpoint is served by the real backend (`server/navigator.ts`) — one process serves the client and `/api` together (see **Deploying it** below). The endpoint is authenticated and rate-limited, with hard caps on input size, a 60-second model timeout, and per-request token-usage logging.
 
 ## How it works
 
@@ -133,3 +133,15 @@ npm start        # production: serves the built client + /api from one server (:
 ```
 
 `npm run dev` starts the API and the client together; sign up (any email + an 8-character password) to create an account. Turn on the live AI by adding `ANTHROPIC_API_KEY` to a `.env` file (see `.env.example`) — without it the deterministic engine answers. The dev database lives at `server/data/` (git-ignored). Use the ↺ button next to your name to start a fresh record, **Export** to download all your data, and **Sign out** to switch accounts.
+
+## Deploying it
+
+The server is a single Node 22+ process; the non-negotiables for a real deployment:
+
+- **Persist the data.** Set `DATA_DIR` to a directory on a persistent volume — the SQLite database (accounts, family records, uploaded documents) lives there. A host with an ephemeral filesystem will erase every family's record on deploy unless this is set. **Back this directory up** (nightly `sqlite3 app.db ".backup ..."` or [Litestream](https://litestream.io/) replication) — it holds families' legal and medical documents.
+- **Set `NODE_ENV=production`.** Session cookies are marked `Secure` in production (and whenever the request itself arrives over TLS — `trust proxy` is enabled for one hop).
+- **Serve over HTTPS** via your platform or a TLS-terminating proxy.
+- **Monitor `GET /healthz`** — returns `{ok:true}` when the process and database are healthy.
+- The server shuts down gracefully on SIGTERM (finishes in-flight requests, closes the database).
+
+Operational guardrails built in: per-IP rate limits on login/signup, per-user rate limits and hard input caps on the AI navigator (it is authenticated — it spends real API budget), per-file (10 MB) and per-account (100 MB) storage limits, JSON-only error responses, and per-request usage logging for the AI path.

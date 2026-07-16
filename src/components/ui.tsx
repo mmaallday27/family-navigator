@@ -40,18 +40,35 @@ export function Card({ children, className }: { children: ReactNode; className?:
   return <div className={cx('card p-5', className)}>{children}</div>
 }
 
-export function ProgressBar({ value, accent = 'teal' }: { value: number; accent?: string }) {
+export function ProgressBar({
+  value,
+  accent = 'teal',
+  label = 'Progress',
+}: {
+  value: number
+  accent?: string
+  /** Accessible name announced by screen readers. */
+  label?: string
+}) {
   const bar: Record<string, string> = {
     teal: 'bg-teal-500',
     amber: 'bg-amber-400',
     sage: 'bg-sage-500',
     lav: 'bg-lav-500',
   }
+  const clamped = Math.max(0, Math.min(100, value))
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-line">
+    <div
+      className="h-2 w-full overflow-hidden rounded-full bg-line"
+      role="progressbar"
+      aria-label={label}
+      aria-valuenow={Math.round(clamped)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div
         className={cx('h-full rounded-full transition-all duration-500', bar[accent] ?? bar.teal)}
-        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+        style={{ width: `${clamped}%` }}
       />
     </div>
   )
@@ -134,9 +151,12 @@ export function EmptyState({
   )
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 /**
  * Accessible modal: labelled dialog, Escape to close, focus moves into the
- * panel on open and returns to the trigger on close.
+ * panel on open, stays trapped inside it, and returns to the trigger on close.
  */
 export function Modal({
   open,
@@ -150,20 +170,52 @@ export function Modal({
   children: ReactNode
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  // Keep the latest onClose in a ref so inline handlers don't re-run the
+  // effects below on every render (which would steal focus mid-keystroke).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
+  // Focus capture on open, restore to the trigger on close.
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
+    return () => previouslyFocused?.focus()
+  }, [open])
+
+  // Escape closes; Tab / Shift+Tab wrap within the panel's focusable elements.
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onCloseRef.current()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const panel = panelRef.current
+      if (!panel) return
+      const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (focusables.length === 0) {
+        e.preventDefault()
+        panel.focus()
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey) {
+        if (active === first || active === panel || !panel.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !panel.contains(active)) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      previouslyFocused?.focus()
-    }
-  }, [open, onClose])
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   if (!open) return null
 

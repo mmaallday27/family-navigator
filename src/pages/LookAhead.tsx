@@ -19,7 +19,7 @@ import {
 import { PageHeader } from '../components/ui'
 import { AiNote } from '../components/ai'
 import { useFamily } from '../store/FamilyContext'
-import { firstName } from '../store/selectors'
+import { firstName, getAge, stageIdForAge } from '../store/selectors'
 import { buildLookAhead, type HorizonKind } from '../intelligence/lookahead'
 import { cx } from '../lib/cx'
 
@@ -42,6 +42,13 @@ export default function LookAhead() {
 
   const totalAhead = horizons.reduce((n, h) => n + h.events.length, 0)
   const startNowCount = horizons.flatMap((h) => h.events).filter((e) => e.startNow).length
+
+  // Past 22, the countdown deadlines are behind the family — if nothing but
+  // family moments remain ahead, point to where the road continues instead.
+  const age = getAge(state.child)
+  const adultQuiet =
+    stageIdForAge(age) === 'adult' &&
+    horizons.every((h) => h.events.every((e) => e.kind === 'family'))
 
   return (
     <div className="space-y-7">
@@ -66,6 +73,24 @@ export default function LookAhead() {
           <>Nothing is overdue — you’re ahead of the road, which is exactly where this works best.</>
         )}
       </AiNote>
+
+      {/* Adult stage — the countdown years are done; the road continues elsewhere */}
+      {adultQuiet && (
+        <section className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="section-title text-lg font-semibold">The countdown years are behind you</h2>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
+              At {age}, the fixed legal deadlines — 14, 18, 22 — have passed, so this view stays
+              quiet. What matters now lives in the <span className="font-medium text-ink">Adult Life</span> and{' '}
+              <span className="font-medium text-ink">Future Planning &amp; Legacy</span> stages of the
+              Journey Map: work, community, housing, and long-term security, at {name}&rsquo;s own pace.
+            </p>
+          </div>
+          <Link to="/journey" className="btn-primary shrink-0">
+            Open the Journey Map <ArrowRight className="h-4 w-4" />
+          </Link>
+        </section>
+      )}
 
       {/* Horizon selector */}
       <div className="flex flex-wrap gap-2">
@@ -144,6 +169,9 @@ export default function LookAhead() {
                         </div>
                         <h3 className="mt-2 font-semibold leading-snug text-ink">{e.title}</h3>
                         {e.detail && <p className="mt-1 text-sm leading-relaxed text-ink-soft">{e.detail}</p>}
+                        {e.sourceNote && (
+                          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">{e.sourceNote}</p>
+                        )}
                         <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-teal-600">
                           Go there <ArrowRight className="h-3.5 w-3.5" />
                         </span>

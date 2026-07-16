@@ -13,7 +13,12 @@ export function exportAll(req: AuthedRequest, res: Response) {
   const fam = db.prepare('SELECT record_json FROM families WHERE user_id = ?').get(req.userId) as
     | { record_json: string }
     | undefined
-  const record = fam ? JSON.parse(fam.record_json) : null
+  let record = null
+  try {
+    record = fam ? JSON.parse(fam.record_json) : null
+  } catch {
+    record = null
+  }
   const documents = listUserDocuments(req.userId).map((d) => ({
     id: d.id,
     name: d.name,

@@ -33,7 +33,8 @@
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-teal-500 text-white hover:bg-teal-600;
+    /* teal-600, not teal-500: white text needs the darker shade to pass AA */
+    @apply btn bg-teal-600 text-white hover:bg-teal-700;
   }
   .btn-ghost {
     @apply btn bg-teal-50 text-teal-700 hover:bg-teal-100;
@@ -70,4 +71,50 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #D3C9B8;
+}
+
+/* --- print styles (FamilySummary / MeetingPrep) --- */
+/* The `.print-sheet` region is the only thing that prints. The visibility
+   approach keeps the on-screen layout untouched (no Layout changes needed):
+   everything is hidden, then the sheet and its contents are made visible and
+   lifted to the top of the page. `.no-print` removes screen-only chrome that
+   sits inside the sheet flow. */
+@page {
+  margin: 1.6cm;
+}
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    /* Escape the app shell (sidebar offset, max-width column) entirely. */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    /* Serif-lean, black-on-white — a calm paper document, not a screenshot. */
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .print-sheet,
+  .print-sheet * {
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
 }

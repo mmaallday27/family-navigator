@@ -3,6 +3,7 @@
 // and answers — what matters this week, how long it will take, what's new,
 // and what to watch. Every line is derived from live state.
 
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CalendarClock,
@@ -15,19 +16,27 @@ import {
   MessageCircleHeart,
   Check,
   History,
+  MapPin,
+  Pencil,
+  Plus,
   Telescope,
 } from 'lucide-react'
-import { Card, EmptyState, ProgressBar, ProgressRing } from '../components/ui'
+import { Card, EmptyState, Modal, ProgressBar, ProgressRing } from '../components/ui'
 import { AiInsightCard } from '../components/ai'
-import { useFamily } from '../store/FamilyContext'
+import { useFamily, type ChildProfile, type FamilyLocation } from '../store/FamilyContext'
 import {
+  birthYearOptions,
   currentStageProgress,
   firstName,
   getAge,
   initials,
   keyMoments,
+  locationLabel,
+  monthOptions,
+  roughlyLabel,
   stageIdForAge,
 } from '../store/selectors'
+import { supportedStates } from '../data/stateRegistry'
 import { buildBriefing } from '../intelligence/insights'
 import { journeyStages } from '../data/journey'
 import { demoDeadlines } from '../data/demoFamily'
@@ -48,9 +57,176 @@ const kindDot: Record<string, string> = {
   celebration: 'bg-sage-500',
 }
 
+const fieldClass =
+  'mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300'
+
+/** Fix a typo in the name, birthday, diagnosis, communication, or where the
+ *  family lives — the small edits onboarding promised would always be possible
+ *  later. */
+function EditChildForm({
+  child,
+  location,
+  onSave,
+  onCancel,
+}: {
+  child: ChildProfile
+  location: FamilyLocation
+  onSave: (patch: Partial<ChildProfile>, location: FamilyLocation) => void
+  onCancel: () => void
+}) {
+  const [birthYear0, birthMonth0, birthDay0] = child.birthDate.split('-')
+  const [name, setName] = useState(child.name)
+  const [birthMonth, setBirthMonth] = useState(Number(birthMonth0) || 1)
+  const [birthYear, setBirthYear] = useState(Number(birthYear0) || new Date().getFullYear())
+  const [diagnosis, setDiagnosis] = useState(child.diagnosis)
+  const [communication, setCommunication] = useState(child.communication)
+  const [locState, setLocState] = useState(location.state)
+  const [county, setCounty] = useState(location.county)
+  const [zip, setZip] = useState(location.zip)
+
+  const save = () => {
+    if (!name.trim()) return
+    // Keep the exact day when the month & year are unchanged; otherwise anchor
+    // the new month to the 1st, same as onboarding.
+    const unchanged = Number(birthYear0) === birthYear && Number(birthMonth0) === birthMonth
+    const day = unchanged && birthDay0 ? birthDay0 : '01'
+    onSave(
+      {
+        name: name.trim(),
+        birthDate: `${birthYear}-${String(birthMonth).padStart(2, '0')}-${day}`,
+        diagnosis: diagnosis.trim(),
+        communication: communication.trim(),
+      },
+      {
+        state: locState,
+        county: locState ? county.trim() : '',
+        zip: locState ? zip.trim() : '',
+      },
+    )
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        save()
+      }}
+      className="mt-4 space-y-4"
+    >
+      <label className="block">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">First name</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} />
+      </label>
+      <div>
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">When they were born</span>
+        <div className="mt-1.5 flex gap-2">
+          <select
+            value={birthMonth}
+            onChange={(e) => setBirthMonth(Number(e.target.value))}
+            aria-label="Birth month"
+            className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+          >
+            {monthOptions.map((m, i) => (
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <select
+            value={birthYear}
+            onChange={(e) => setBirthYear(Number(e.target.value))}
+            aria-label="Birth year"
+            className="w-28 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+          >
+            {birthYearOptions().map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-faint">
+          Every projected legal date — 14, 18, 22 — is derived from this.
+        </p>
+      </div>
+      <label className="block">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Diagnosis</span>
+        <input
+          value={diagnosis}
+          onChange={(e) => setDiagnosis(e.target.value)}
+          placeholder="Leave blank if you’re still exploring"
+          className={fieldClass}
+        />
+      </label>
+      <label className="block">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Communication</span>
+        <input
+          value={communication}
+          onChange={(e) => setCommunication(e.target.value)}
+          placeholder="e.g. Speaks in full sentences; writes to organize thoughts"
+          className={fieldClass}
+        />
+      </label>
+      <div>
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Where you live</span>
+        <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+          <select
+            value={locState}
+            onChange={(e) => setLocState(e.target.value)}
+            aria-label="State"
+            className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:border-teal-300"
+          >
+            <option value="">Prefer not to say</option>
+            {supportedStates.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          {locState !== '' && (
+            <>
+              <input
+                value={county}
+                onChange={(e) => setCounty(e.target.value)}
+                placeholder="County"
+                aria-label="County"
+                className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
+              />
+              <input
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                placeholder="ZIP (optional)"
+                aria-label="ZIP code"
+                inputMode="numeric"
+                className="w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300 sm:w-28"
+              />
+            </>
+          )}
+        </div>
+        <p className="mt-1.5 text-xs text-ink-faint">
+          Optional — services and deadlines differ by state and county, so this grounds your
+          guidance in your state’s actual system.
+        </p>
+      </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel} className="btn-soft">
+          Cancel
+        </button>
+        <button type="submit" disabled={!name.trim()} className="btn-primary">
+          Save changes
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export default function Dashboard() {
   const { state, dispatch } = useFamily()
-  const { child, goals } = state
+  const { child, goals, parent } = state
+  const [editingChild, setEditingChild] = useState(false)
+  const [addingGoal, setAddingGoal] = useState(false)
+  const [goalTitle, setGoalTitle] = useState('')
+  const [goalArea, setGoalArea] = useState('')
   const age = getAge(child)
   const stageId = stageIdForAge(age)
   const activeStage = journeyStages.find((s) => s.id === stageId)!
@@ -61,13 +237,33 @@ export default function Dashboard() {
     .sort((a, b) => a.sort - b.sort)
     .slice(0, 4)
   const childFirst = firstName(child.name)
+  const locLabel = locationLabel(state.location)
 
   // Acknowledge time away — the product should feel alive on return.
   const days = briefing.daysSinceLastVisit
   const welcomeBack =
     days !== null && days >= 7
-      ? `Welcome back — it’s been ${days >= 30 ? `about ${Math.round(days / 30)} month${days >= 60 ? 's' : ''}` : `${days} days`}. I’ve kept everything current while you were away; here’s where things stand now.`
+      ? `Welcome back — it’s been ${roughlyLabel(days)}. I’ve kept everything current while you were away; here’s where things stand now.`
       : null
+
+  const addGoal = () => {
+    const title = goalTitle.trim()
+    if (!title) return
+    dispatch({
+      type: 'add-goal',
+      goal: {
+        id: crypto.randomUUID(),
+        title,
+        area: goalArea.trim() || 'Family',
+        due: 'This year',
+        progress: 0,
+        owner: firstName(parent.name) || 'You',
+      },
+    })
+    setGoalTitle('')
+    setGoalArea('')
+    setAddingGoal(false)
+  }
 
   return (
     <div className="space-y-7">
@@ -163,9 +359,9 @@ export default function Dashboard() {
             )}
           </div>
 
-          <p className="mt-4 text-[11px] leading-relaxed text-teal-100/80">
-            Derived from your family record on this device. Always verify dates against official
-            letters — and bring legal, medical, and benefits decisions to a qualified professional.
+          <p className="mt-4 text-[11px] leading-relaxed text-white/90">
+            Derived from your family record. Always verify dates against official letters — and
+            bring legal, medical, and benefits decisions to a qualified professional.
           </p>
         </div>
       </section>
@@ -183,6 +379,11 @@ export default function Dashboard() {
                 <span className="text-sm text-ink-faint">
                   {[`age ${age}`, child.schoolGrade].filter(Boolean).join(' · ')}
                 </span>
+                {locLabel && (
+                  <span className="inline-flex items-center gap-1 text-sm text-ink-faint">
+                    <MapPin className="h-3.5 w-3.5" /> {locLabel}
+                  </span>
+                )}
               </div>
               {child.diagnosis && (
                 <p className="mt-1 text-sm text-ink-soft">
@@ -222,8 +423,38 @@ export default function Dashboard() {
                 </p>
               )}
             </div>
+            <button
+              onClick={() => setEditingChild(true)}
+              className="btn-ghost -mr-2 -mt-1 shrink-0 text-ink-faint hover:text-ink-soft"
+              aria-label={`Edit ${childFirst}’s profile`}
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
           </div>
         </Card>
+
+        <Modal
+          open={editingChild}
+          onClose={() => setEditingChild(false)}
+          title={`${childFirst}’s profile`}
+        >
+          <EditChildForm
+            child={child}
+            location={state.location}
+            onCancel={() => setEditingChild(false)}
+            onSave={(patch, location) => {
+              dispatch({ type: 'update-child', child: patch })
+              if (
+                location.state !== state.location.state ||
+                location.county !== state.location.county ||
+                location.zip !== state.location.zip
+              ) {
+                dispatch({ type: 'set-location', location })
+              }
+              setEditingChild(false)
+            }}
+          />
+        </Modal>
 
         {/* Current stage card */}
         <Card className="flex flex-col bg-gradient-to-br from-lav-50 to-surface">
@@ -284,7 +515,9 @@ export default function Dashboard() {
               <Target className="h-5 w-5 text-teal-600" />
               <h2 className="section-title text-lg font-semibold">Active goals</h2>
             </div>
-            <span className="text-xs text-ink-faint">{goals.length} in progress</span>
+            <span className="text-xs text-ink-faint">
+              {goals.filter((g) => g.progress < 100).length} in progress
+            </span>
           </div>
           {goals.length === 0 ? (
             <EmptyState
@@ -294,22 +527,95 @@ export default function Dashboard() {
             />
           ) : (
             <ul className="space-y-4">
-              {goals.map((g) => (
-                <li key={g.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-ink">{g.title}</p>
-                      <p className="text-xs text-ink-faint">{g.area} · {g.owner}</p>
+              {goals.map((g) => {
+                const done = g.progress >= 100
+                return (
+                  <li key={g.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={cx('font-medium', done ? 'text-ink-faint' : 'text-ink')}>
+                          {done && <Check className="mr-1 inline h-4 w-4 text-sage-500" aria-label="Completed" />}
+                          {g.title}
+                        </p>
+                        <p className="text-xs text-ink-faint">{g.area} · {g.owner}</p>
+                      </div>
+                      <span className={cx('chip shrink-0', done ? 'bg-sage-50 text-sage-600' : 'bg-canvas text-ink-soft')}>
+                        {done ? 'Done' : `Due ${g.due}`}
+                      </span>
                     </div>
-                    <span className="chip shrink-0 bg-canvas text-ink-soft">Due {g.due}</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3">
-                    <ProgressBar value={g.progress} />
-                    <span className="w-9 text-right text-xs font-semibold text-ink-soft">{g.progress}%</span>
-                  </div>
-                </li>
-              ))}
+                    <div className="mt-2 flex items-center gap-3">
+                      <ProgressBar value={g.progress} accent={done ? 'sage' : 'teal'} label={`Progress on ${g.title}`} />
+                      <span className="w-9 text-right text-xs font-semibold text-ink-soft">{g.progress}%</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-4 text-xs">
+                      {!done && (
+                        <button
+                          onClick={() => dispatch({ type: 'set-goal-progress', id: g.id, progress: 100 })}
+                          className="font-medium text-teal-600 hover:underline"
+                        >
+                          Mark complete
+                        </button>
+                      )}
+                      <button
+                        onClick={() => dispatch({ type: 'remove-goal', id: g.id })}
+                        className="text-ink-faint hover:text-rose-500"
+                        aria-label={`Remove the goal “${g.title}”`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
+          )}
+          {addingGoal ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                addGoal()
+              }}
+              className="mt-4 space-y-2 rounded-xl bg-canvas p-3"
+            >
+              <input
+                value={goalTitle}
+                onChange={(e) => setGoalTitle(e.target.value)}
+                placeholder="What are you working toward?"
+                aria-label="Goal title"
+                autoFocus
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
+              />
+              <input
+                value={goalArea}
+                onChange={(e) => setGoalArea(e.target.value)}
+                placeholder="Area — e.g. School, Benefits, Independent living"
+                aria-label="Goal area"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
+              />
+              <div className="flex items-center gap-2 pt-1">
+                <button type="submit" disabled={!goalTitle.trim()} className="btn-primary px-3 py-1.5 text-xs">
+                  Add goal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingGoal(false)
+                    setGoalTitle('')
+                    setGoalArea('')
+                  }}
+                  className="btn-soft px-3 py-1.5 text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={() => setAddingGoal(true)}
+              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:underline"
+            >
+              <Plus className="h-4 w-4" /> Add a goal
+            </button>
           )}
         </Card>
 

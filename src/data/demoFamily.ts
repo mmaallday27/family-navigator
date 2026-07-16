@@ -1,7 +1,7 @@
 // The Carter family — sample data used when someone chooses "explore with a
 // sample family" during onboarding. Everything here is illustrative.
 
-import type { ChildProfile, ParentProfile, Goal } from '../store/FamilyContext'
+import type { ChildProfile, FamilyLocation, ParentProfile, Goal } from '../store/FamilyContext'
 import { demoDocFiles } from './documents'
 
 export const demoChild: ChildProfile = {
@@ -18,6 +18,14 @@ export const demoChild: ChildProfile = {
 export const demoParent: ParentProfile = {
   name: 'Maya Carter',
   relationship: 'Mother',
+}
+
+// The Carters live in Rockland County, NY — so the demo exercises the full
+// state-aware path (verified NY resources, NY milestones, aging-out at 22).
+export const demoLocation: FamilyLocation = {
+  state: 'NY',
+  county: 'Rockland',
+  zip: '',
 }
 
 // Checklist items the demo family has already completed (keys into
@@ -117,12 +125,25 @@ export const demoHistory = [
 ]
 
 // Extra demo-only moments shown alongside the derived legal milestones.
+// Computed relative to today so the sample family always has a living,
+// near-future calendar rather than dates that quietly go stale.
+const weeksFromNow = (weeks: number) => {
+  const d = new Date()
+  d.setDate(d.getDate() + weeks * 7)
+  return d
+}
+const fmtDeadline = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+const iepMeeting = weeksFromNow(6)
+const vocAssessment = weeksFromNow(9)
+
 export const demoDeadlines = [
   {
     id: 'd1',
     title: 'Annual IEP meeting — transition focus',
-    dateLabel: 'Sep 18, 2026',
-    sort: new Date('2026-09-18').getTime(),
+    dateLabel: fmtDeadline(iepMeeting),
+    sort: iepMeeting.getTime(),
     category: 'School',
     urgent: false,
   },
@@ -137,8 +158,8 @@ export const demoDeadlines = [
   {
     id: 'd4',
     title: 'Vocational interest assessment scheduled',
-    dateLabel: 'Oct 7, 2026',
-    sort: new Date('2026-10-07').getTime(),
+    dateLabel: fmtDeadline(vocAssessment),
+    sort: vocAssessment.getTime(),
     category: 'Employment',
     urgent: false,
   },

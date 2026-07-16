@@ -1,11 +1,4 @@
-import {
-  Users,
-  UserPlus,
-  Activity,
-  MessageSquare,
-  CalendarDays,
-  Clock,
-} from 'lucide-react'
+import { Users, Activity, Mail, Clock } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui'
 import { AiNote } from '../components/ai'
 import { familyMembers, familyActivity, type FamilyMember } from '../data/family'
@@ -92,6 +85,24 @@ export default function FamilyCircle() {
   const connected = members.filter((m) => m.initials !== '+').length
   const activity = state.isDemo ? familyActivity : []
 
+  // An honest invitation: a prefilled email the parent can send today —
+  // introducing the navigator and what joining the circle would mean.
+  const childFirst = firstName(child.name)
+  const inviteSubject = `Joining ${childFirst}’s support circle`
+  const inviteBody = [
+    'Hi,',
+    '',
+    `I’ve been using Family Navigator to keep ${childFirst}’s whole picture in one place — the plans, the paperwork, and what’s coming next — so everyone who supports ${childFirst} can see the same road.`,
+    '',
+    `I’d love for you to be part of that circle. Your perspective matters, and I’ll make sure you always have what you need — current goals, documents, and dates — without extra back-and-forth.`,
+    '',
+    'Could we find a few minutes to talk about it?',
+    '',
+    'Thank you,',
+    parent.name,
+  ].join('\n')
+  const inviteHref = `mailto:?subject=${encodeURIComponent(inviteSubject)}&body=${encodeURIComponent(inviteBody)}`
+
   return (
     <div className="space-y-7">
       <PageHeader
@@ -100,9 +111,9 @@ export default function FamilyCircle() {
         subtitle={`The people walking alongside ${firstName(child.name)} — and how everyone’s contribution fits together. You’re the coordinator; this keeps the whole team in view.`}
         icon={<Users className="h-6 w-6" />}
         action={
-          <button className="btn-primary">
-            <UserPlus className="h-4 w-4" /> Invite someone
-          </button>
+          <a href={inviteHref} className="btn-primary">
+            <Mail className="h-4 w-4" /> Share by email
+          </a>
         }
       />
 
@@ -214,16 +225,6 @@ export default function FamilyCircle() {
                         <Clock className="h-3 w-3" /> {m.lastTouch}
                       </span>
                     </div>
-                    {!isOpen && (
-                      <div className="mt-3 flex gap-2 border-t border-line pt-3">
-                        <button className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:underline">
-                          <MessageSquare className="h-3.5 w-3.5" /> Message
-                        </button>
-                        <button className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:underline">
-                          <CalendarDays className="h-3.5 w-3.5" /> Schedule
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </Card>
               )

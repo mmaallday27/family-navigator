@@ -33,6 +33,7 @@ import {
   firstName,
   getAge,
   personalize,
+  roughlyLabel,
   stageIdForAge,
   transitionOverview,
 } from '../store/selectors'
@@ -232,7 +233,7 @@ export default function Companion() {
       const daysAway = prev ? Math.round((Date.now() - new Date(prev).getTime()) / 86_400_000) : 0
       const awayNote =
         daysAway >= 7
-          ? ` It’s been ${daysAway >= 30 ? `about ${Math.round(daysAway / 30)} month${daysAway >= 60 ? 's' : ''}` : `${daysAway} days`} — I’ve kept everything current while you were away.`
+          ? ` It’s been ${roughlyLabel(daysAway)} — I’ve kept everything current while you were away.`
           : ''
       return {
       id: 0,
@@ -258,6 +259,9 @@ export default function Companion() {
   const [typing, setTyping] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const idRef = useRef(messages.reduce((m, x) => Math.max(m, x.id), 0) + 1)
+  // Conversation generation: bumped on clear so an in-flight reply from a
+  // cleared conversation can't resurrect it when it lands.
+  const generationRef = useRef(0)
 
   // Is a live model configured on the server? If so, answers are generated and
   // grounded; if not, the deterministic engine answers. Either way it works.
@@ -298,6 +302,7 @@ export default function Companion() {
   const send = (text: string) => {
     const value = text.trim()
     if (!value || typing) return
+    const generation = generationRef.current
     const userMsg: StoredMessage = { id: idRef.current++, role: 'user', text: value }
     const priorHistory = messages
       .map((m) => ({ role: m.role, text: m.text ?? m.answer?.intro ?? '' }))
@@ -316,6 +321,8 @@ export default function Companion() {
       : det
 
     const finish = (answer: CompanionResponse) => {
+      // The conversation was cleared while this reply was in flight — drop it.
+      if (generation !== generationRef.current) return
       const withAnswer = [...withUser, { id: idRef.current++, role: 'assistant' as const, answer }]
       setMessages(withAnswer)
       setTyping(false)
@@ -339,7 +346,9 @@ export default function Companion() {
   }
 
   const clearConversation = () => {
+    generationRef.current += 1
     setMessages([greetingMessage])
+    setTyping(false)
     dispatch({ type: 'set-companion-messages', messages: [] })
   }
 
@@ -367,7 +376,7 @@ export default function Companion() {
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Chat column */}
         <div className="lg:col-span-2">
-          <div className="card flex h-[560px] flex-col overflow-hidden">
+          <div className="card flex h-[min(560px,calc(100dvh_-_220px))] flex-col overflow-hidden">
             <div className="flex-1 space-y-4 overflow-y-auto p-5" role="log" aria-live="polite" aria-label="Conversation">
               {messages.map((m) =>
                 m.role === 'user' ? (

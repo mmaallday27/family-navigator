@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+// The Lifelong Family Vault — not a file manager, but the documentary memory
+// of a person's developmental life. Documents are organized by the six journey
+// areas of the road (education → clinical → benefits → adult life → legal →
+// family), storage is a first-class honest system, and every uploaded file can
+// be genuinely read by the navigator. The family owns the record, always.
+
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   FolderHeart,
   FileText,
@@ -10,13 +16,25 @@ import {
 } from 'lucide-react'
 import { PageHeader, Card, EmptyState, Modal } from '../components/ui'
 import { AiNote, SourceBadge, WhyThisMatters } from '../components/ai'
-import { docCategories, type DocFile } from '../data/documents'
+import { docCategories, docGroups, type DocFile } from '../data/documents'
 import { useFamily } from '../store/FamilyContext'
 import { firstName } from '../store/selectors'
 import { analyzeDocument, type DocumentAnalysis } from '../intelligence/documents'
 import { vaultGaps } from '../intelligence/insights'
-import { apiDeleteDocument, apiUploadDocument, documentContentUrl, fileToBase64 } from '../api'
+import {
+  apiDeleteDocument,
+  apiStorage,
+  apiUploadDocument,
+  documentContentUrl,
+  fileToBase64,
+  type StorageInfo,
+} from '../api'
 import { cx, accentChip } from '../lib/cx'
+import { StorageMeter, humanBytes } from '../components/vault/StorageMeter'
+import { GroupedCategoryPicker } from '../components/vault/CategoryPicker'
+import { DocumentInsightsPanel } from '../components/vault/DocumentInsightsPanel'
+
+const FALLBACK_MAX_FILE_BYTES = 10 * 1_048_576
 
 export default function DocumentVault() {
   const { state, dispatch } = useFamily()
@@ -29,8 +47,19 @@ export default function DocumentVault() {
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [analysis, setAnalysis] = useState<{ docName: string; result: DocumentAnalysis } | null>(null)
+  const [storage, setStorage] = useState<StorageInfo | null>(null)
+
+  // Storage is a first-class system: load it with the page, refresh it after
+  // every upload and delete. A failed fetch is quiet — the vault still works.
+  const refreshStorage = () => {
+    apiStorage()
+      .then(setStorage)
+      .catch(() => {})
+  }
+  useEffect(refreshStorage, [])
 
   const filtered = useMemo(() => {
     return documents.filter(
@@ -43,6 +72,11 @@ export default function DocumentVault() {
   const flaggedCount = documents.filter((f) => f.flagged).length
   const catName = (id: string) => docCategories.find((c) => c.id === id)?.name ?? id
   const catColor = (id: string) => docCategories.find((c) => c.id === id)?.color ?? 'teal'
+  const catCount = (id: string) => documents.filter((f) => f.categoryId === id).length
+  const selectedUploadCat = docCategories.find((c) => c.id === uploadCat)
+
+  const maxFileBytes = storage?.maxFileBytes ?? FALLBACK_MAX_FILE_BYTES
+  const storageFull = storage !== null && storage.remainingBytes <= 0
 
   const resetUpload = () => {
     setUploadName('')
@@ -51,12 +85,25 @@ export default function DocumentVault() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  const humanSize = (bytes: number) =>
-    bytes < 1024 ? `${bytes} B` : bytes < 1_048_576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1_048_576).toFixed(1)} MB`
-
   const addDocument = async () => {
     const name = uploadName.trim() || file?.name?.trim() || ''
     if (!name || busy) return
+    if (file && file.size > maxFileBytes) {
+      setUploadError(
+        `That file is ${humanBytes(file.size)} — over the ${humanBytes(maxFileBytes)} per-file limit. A smaller scan or a compressed PDF will file just fine.`,
+      )
+      return
+    }
+    // Quota guard: if the file won't fit, explain instead of trying. Nothing
+    // already stored is affected either way.
+    if (file && storage && file.size > storage.remainingBytes) {
+      setUploadError(
+        storage.remainingBytes <= 0
+          ? 'Your storage is full, so file uploads are paused for now. Everything already in your vault stays viewable and exportable — see “About storage plans” on the vault page for how to preserve more. You can still add a named placeholder today.'
+          : `This file needs ${humanBytes(file.size)}, but your vault has ${humanBytes(storage.remainingBytes)} of space left. Everything already stored stays safe — see “About storage plans” on the vault page for how to preserve more.`,
+      )
+      return
+    }
     setBusy(true)
     setUploadError(null)
     // The intelligent part: the platform reads what kind of moment this
@@ -72,7 +119,7 @@ export default function DocumentVault() {
           name,
           categoryId: uploadCat,
           id: saved.id,
-          size: humanSize(saved.size),
+          size: humanBytes(saved.size),
           hasFile: true,
         })
       } else {
@@ -84,6 +131,7 @@ export default function DocumentVault() {
       setActiveCat('all')
       setQuery('')
       setAnalysis({ docName: name, result })
+      refreshStorage()
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
@@ -93,22 +141,36 @@ export default function DocumentVault() {
 
   const removeDocument = async (doc: DocFile) => {
     if (!window.confirm(`Remove “${doc.name}” from the vault?`)) return
-    if (doc.hasFile) await apiDeleteDocument(doc.id).catch(() => {})
+    setRemoveError(null)
+    if (doc.hasFile) {
+      // The stored file must be gone from the server before the entry leaves
+      // the record — otherwise the bytes would linger with no way to reach them.
+      try {
+        await apiDeleteDocument(doc.id)
+      } catch {
+        setRemoveError(
+          `“${doc.name}” couldn’t be removed just now — it’s still safe in your vault. Please try again in a moment.`,
+        )
+        return
+      }
+    }
     dispatch({ type: 'remove-document', id: doc.id })
+    refreshStorage()
   }
 
   const gaps = vaultGaps(state)
+  const childName = firstName(state.child.name)
 
   return (
     <div className="space-y-7">
       <PageHeader
-        eyebrow="Everything in one calm place"
-        title="Document Vault"
-        subtitle="The paperwork of a lifetime, organized so you can find the right document the moment a meeting, application, or deadline calls for it."
+        eyebrow="The documentary memory of a lifetime"
+        title="Lifelong Family Vault"
+        subtitle={`Every evaluation, plan, letter, and note — one living record of ${childName ? `${childName}’s` : 'your child’s'} developmental life, owned by your family and organized around the journey itself.`}
         icon={<FolderHeart className="h-6 w-6" />}
         action={
           <button onClick={() => setShowUpload(true)} className="btn-primary">
-            <UploadCloud className="h-4 w-4" /> Upload document
+            <UploadCloud className="h-4 w-4" /> Add a document
           </button>
         }
       />
@@ -121,7 +183,7 @@ export default function DocumentVault() {
           </div>
           <div>
             <p className="font-display text-2xl font-semibold text-ink">{documents.length}</p>
-            <p className="text-xs text-ink-faint">Documents stored</p>
+            <p className="text-xs text-ink-faint">Documents in the record</p>
           </div>
         </Card>
         <Card className="flex items-center gap-4">
@@ -138,16 +200,19 @@ export default function DocumentVault() {
             <FolderHeart className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-display text-2xl font-semibold text-ink">{docCategories.length}</p>
-            <p className="text-xs text-ink-faint">Organized categories</p>
+            <p className="font-display text-2xl font-semibold text-ink">{docGroups.length}</p>
+            <p className="text-xs text-ink-faint">Areas of the journey</p>
           </div>
         </Card>
       </div>
 
+      {/* Storage — honest and first-class. Quietly absent if it can't load. */}
+      {storage && <StorageMeter info={storage} />}
+
       <WhyThisMatters
         matters="Every service, benefit, and legal step downstream asks for paperwork you already have — the current IEP, a recent evaluation, benefits letters. A family that can produce the right document in a moment moves faster and gets taken more seriously."
         now="Documents scatter across email, folders, and backpacks exactly when you're busiest. Gathering them into one place before you need them turns future emergencies into quiet lookups."
-        connects="When you add a document, I read what it is, flag deadlines and gaps, and update your briefing, meeting prep, and Look Ahead — nothing sits in isolation."
+        connects="When you add a document, I can read the actual file — pulling out its dates, action items, and open questions — and connect it to your briefing, meeting prep, and Look Ahead. Nothing sits in isolation."
       />
 
       {/* Vault health — what the record is missing for this stage */}
@@ -178,52 +243,51 @@ export default function DocumentVault() {
         </AiNote>
       )}
 
-      {/* Search + category filter */}
+      {/* Search + journey-grouped browse */}
       <div className="space-y-4">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search documents…"
-            aria-label="Search documents"
-            className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-4 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search documents…"
+              aria-label="Search documents"
+              className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-4 text-sm text-ink placeholder:text-ink-faint focus:border-teal-300"
+            />
+          </div>
           <button
             onClick={() => setActiveCat('all')}
+            aria-pressed={activeCat === 'all'}
             className={cx(
               'chip border transition-colors',
-              activeCat === 'all' ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-line bg-surface text-ink-soft hover:bg-canvas',
+              activeCat === 'all'
+                ? 'border-teal-300 bg-teal-50 text-teal-700'
+                : 'border-line bg-surface text-ink-soft hover:bg-canvas',
             )}
           >
-            All ({documents.length})
+            All documents ({documents.length})
           </button>
-          {docCategories.map((c) => {
-            const count = documents.filter((f) => f.categoryId === c.id).length
-            return (
-              <button
-                key={c.id}
-                onClick={() => setActiveCat(c.id)}
-                className={cx(
-                  'chip border transition-colors',
-                  activeCat === c.id ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-line bg-surface text-ink-soft hover:bg-canvas',
-                )}
-              >
-                {c.name} ({count})
-              </button>
-            )
-          })}
         </div>
+        <GroupedCategoryPicker
+          value={activeCat}
+          onChange={(id) => setActiveCat(id === activeCat ? 'all' : id)}
+          counts={catCount}
+        />
       </div>
+
+      {removeError && (
+        <p className="rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700" role="alert">
+          {removeError}
+        </p>
+      )}
 
       {/* File list */}
       <Card className="p-0">
         {documents.length === 0 ? (
           <EmptyState
             icon={<FolderHeart className="h-6 w-6" />}
-            title={`Start ${firstName(state.child.name)}’s record`}
+            title={childName ? `Start ${childName}’s record` : 'Start your family’s record'}
             body="Every report, IEP, and letter you add becomes part of one living history — ready the moment a school, agency, or attorney asks."
             action={
               <button onClick={() => setShowUpload(true)} className="btn-primary">
@@ -239,48 +303,59 @@ export default function DocumentVault() {
         ) : (
           <ul className="divide-y divide-line">
             {filtered.map((f) => (
-              <li key={f.id} className="flex items-center gap-4 p-4 hover:bg-canvas/50">
-                <div
-                  className={cx(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
-                    accentChip[catColor(f.categoryId)],
-                  )}
-                >
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate font-medium text-ink">{f.name}</p>
-                    {f.flagged && (
-                      <span className="chip bg-amber-50 text-amber-600">
-                        <AlertCircle className="h-3 w-3" /> Attention
-                      </span>
+              <li key={f.id} className="p-4 hover:bg-canvas/50">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={cx(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+                      accentChip[catColor(f.categoryId)],
                     )}
-                  </div>
-                  <p className="text-xs text-ink-faint">
-                    {catName(f.categoryId)} · {f.date} · {f.size}
-                  </p>
-                  {f.note && <p className="mt-0.5 text-xs text-amber-600">{f.note}</p>}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {f.hasFile && (
-                    <a
-                      href={documentContentUrl(f.id)}
-                      className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
-                      title={`Download ${f.name}`}
-                      aria-label={`Download ${f.name}`}
-                    >
-                      <Download className="h-4 w-4" />
-                    </a>
-                  )}
-                  <button
-                    onClick={() => removeDocument(f)}
-                    className="rounded-lg p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-500"
-                    aria-label={`Remove ${f.name}`}
-                    title={`Remove ${f.name}`}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate font-medium text-ink">{f.name}</p>
+                      {f.flagged && (
+                        <span className="chip bg-amber-50 text-amber-600">
+                          <AlertCircle className="h-3 w-3" /> Attention
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-ink-faint">
+                      {catName(f.categoryId)} · {f.date} · {f.size}
+                    </p>
+                    {f.note && <p className="mt-0.5 text-xs text-amber-600">{f.note}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {f.hasFile && (
+                      <a
+                        href={documentContentUrl(f.id)}
+                        className="rounded-lg p-2 text-ink-faint hover:bg-canvas hover:text-ink-soft"
+                        title={`Download ${f.name}`}
+                        aria-label={`Download ${f.name}`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => removeDocument(f)}
+                      className="rounded-lg p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-500"
+                      aria-label={`Remove ${f.name}`}
+                      title={`Remove ${f.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                {/* Document intelligence — grounded in the file's real bytes */}
+                <div className="mt-2 pl-14">
+                  <DocumentInsightsPanel
+                    doc={f}
+                    onStore={(insights) =>
+                      dispatch({ type: 'set-document-insights', id: f.id, insights })
+                    }
+                  />
                 </div>
               </li>
             ))}
@@ -302,6 +377,13 @@ export default function DocumentVault() {
           isn’t handy yet. Either way it’s filed and ready for the moment you need it.
         </p>
 
+        {storageFull && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-xs leading-relaxed text-ink-soft">
+            Your storage is currently full, so new file uploads are paused. Everything already
+            stored stays viewable and exportable — and you can still add a named placeholder today.
+          </p>
+        )}
+
         <div className="mt-4">
           <label className="block cursor-pointer rounded-2xl border-2 border-dashed border-line bg-canvas/40 p-5 text-center hover:border-teal-300">
             <input
@@ -311,6 +393,7 @@ export default function DocumentVault() {
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null
                 setFile(f)
+                setUploadError(null)
                 if (f && !uploadName.trim()) setUploadName(f.name)
               }}
             />
@@ -319,7 +402,9 @@ export default function DocumentVault() {
               {file ? file.name : 'Choose a file'}
             </p>
             <p className="text-xs text-ink-faint">
-              {file ? `${humanSize(file.size)} · click to change` : 'PDF, image, or document · up to 10 MB'}
+              {file
+                ? `${humanBytes(file.size)} · click to change`
+                : `PDF, image, or document · up to ${humanBytes(maxFileBytes)}`}
             </p>
           </label>
         </div>
@@ -337,29 +422,23 @@ export default function DocumentVault() {
         </div>
 
         <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Category</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {docCategories.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setUploadCat(c.id)}
-                role="radio"
-                aria-checked={uploadCat === c.id}
-                className={cx(
-                  'chip border transition-colors',
-                  uploadCat === c.id
-                    ? 'border-teal-300 bg-teal-50 text-teal-700'
-                    : cx('border-transparent', accentChip[c.color]),
-                )}
-              >
-                {c.name}
-              </button>
-            ))}
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Where does it belong on the journey?
+          </p>
+          <div className="mt-2 max-h-56 overflow-y-auto pr-1">
+            <GroupedCategoryPicker value={uploadCat} onChange={setUploadCat} colored />
           </div>
+          {selectedUploadCat && (
+            <p className="mt-2 text-xs text-ink-faint">{selectedUploadCat.description}</p>
+          )}
+          <p className="mt-1.5 text-xs text-ink-faint">
+            Nothing has to fit a box — <span className="font-medium text-ink-soft">Family Records</span>{' '}
+            is always open, and it’s your call what belongs there.
+          </p>
         </div>
 
         {uploadError && (
-          <p className="mt-4 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-500" role="alert">
+          <p className="mt-4 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700" role="alert">
             {uploadError}
           </p>
         )}
@@ -420,7 +499,8 @@ export default function DocumentVault() {
 
             <p className="text-[11px] leading-relaxed text-ink-faint">
               Guidance is generated from the document’s type and your family record — always verify
-              dates and requirements against the document itself.
+              dates and requirements against the document itself. Once the file is in your vault,
+              use “Analyze this document” to have the actual document read.
             </p>
 
             <div className="flex justify-end">

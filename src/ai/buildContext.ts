@@ -46,6 +46,9 @@ export function buildFacts(state: FamilyState): NavigatorFacts {
     parentFirst: firstName(state.parent.name),
     age,
     diagnosis: state.child.diagnosis,
+    location: [state.location.county && `${state.location.county} County`, state.location.state]
+      .filter(Boolean)
+      .join(', '),
     stageId,
     stageTitle: stage?.title ?? '',
     strengths: state.child.strengths,

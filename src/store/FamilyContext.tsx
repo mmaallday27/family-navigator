@@ -3,9 +3,15 @@
 // (profile, checklists, goals, documents, saved resources) lives here and now
 // persists to the SERVER, per account — so the record follows the family across
 // devices, not just one browser.
+//
+// Persistence is honest: saves are tracked (saving/saved/failed), failures
+// retry automatically and are surfaced to the UI, writes carry an
+// optimistic-concurrency token so two devices never silently overwrite each
+// other, and a pagehide flush catches changes made just before the tab closes.
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -18,7 +24,7 @@ import {
 import type { DocFile } from '../data/documents'
 import type { CompanionResponse } from '../data/companion'
 import { allChecklistItems } from '../data/transition'
-import { apiGetFamily, apiPutFamily } from '../api'
+import { apiGetFamily, apiPutFamily, apiResetFamily, ConflictError } from '../api'
 import { useAuth } from './AuthContext'
 
 export interface ChildProfile {
@@ -36,6 +42,17 @@ export interface ChildProfile {
 export interface ParentProfile {
   name: string
   relationship: string
+}
+
+/**
+ * Where the family lives — drives state-aware navigation (resources, agency
+ * routing, state milestones). Never inferred: the family tells us, and every
+ * field may be '' if they'd rather not say.
+ */
+export interface FamilyLocation {
+  state: string // two-letter code, e.g. 'NY', or ''
+  county: string
+  zip: string
 }
 
 export interface Goal {
@@ -82,6 +99,9 @@ export interface FamilyState {
   isDemo: boolean
   child: ChildProfile
   parent: ParentProfile
+  location: FamilyLocation
+  /** ISO timestamp of the onboarding data-use acknowledgement (null = not yet). */
+  consentAcknowledgedAt: string | null
   /** Concern ids chosen during onboarding — used to seed goals & guidance. */
   concerns: string[]
   /** Transition checklist completion, keyed by checklist item id. */
@@ -105,11 +125,20 @@ export type FamilyAction =
       checks: Record<string, boolean>
       documents: DocFile[]
       savedResources: string[]
+      location?: FamilyLocation
+      consentAcknowledgedAt?: string | null
     }
+  | { type: 'update-child'; child: Partial<ChildProfile> }
+  | { type: 'set-location'; location: FamilyLocation }
+  | { type: 'acknowledge-consent'; at: string }
+  | { type: 'set-document-insights'; id: string; insights: import('../data/documents').DocumentInsights }
   | { type: 'toggle-check'; id: string }
   | { type: 'toggle-saved'; id: string }
   | { type: 'add-document'; name: string; categoryId: string; id?: string; size?: string; hasFile?: boolean }
   | { type: 'remove-document'; id: string }
+  | { type: 'add-goal'; goal: Goal }
+  | { type: 'set-goal-progress'; id: string; progress: number }
+  | { type: 'remove-goal'; id: string }
   | { type: 'visit'; at: string }
   | { type: 'companion-topic'; topic: string }
   | { type: 'set-companion-messages'; messages: StoredMessage[] }
@@ -117,7 +146,9 @@ export type FamilyAction =
   | { type: 'hydrate'; state: FamilyState }
   | { type: 'reset' }
 
-const VERSION = 3
+const VERSION = 4
+
+const emptyLocation: FamilyLocation = { state: '', county: '', zip: '' }
 
 const emptyAiMemory: AiMemory = {
   lastVisit: null,
@@ -129,7 +160,7 @@ const emptyAiMemory: AiMemory = {
 
 function addActivity(state: FamilyState, text: string): ActivityEvent[] {
   const event: ActivityEvent = {
-    id: `ev${Date.now()}-${state.activity.length}`,
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? `ev-${crypto.randomUUID()}` : `ev${Date.now()}-${state.activity.length}`,
     when: new Date().toISOString(),
     text,
   }
@@ -153,6 +184,8 @@ const initialState: FamilyState = {
   isDemo: false,
   child: emptyChild,
   parent: { name: '', relationship: '' },
+  location: emptyLocation,
+  consentAcknowledgedAt: null,
   concerns: [],
   checks: {},
   savedResources: [],
@@ -171,6 +204,8 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
         isDemo: action.isDemo,
         child: action.child,
         parent: action.parent,
+        location: action.location ?? emptyLocation,
+        consentAcknowledgedAt: action.consentAcknowledgedAt ?? null,
         concerns: action.concerns,
         goals: action.goals,
         checks: action.checks,
@@ -184,6 +219,23 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
           },
         ],
         aiMemory: { ...emptyAiMemory, lastVisit: new Date().toISOString() },
+      }
+    case 'update-child': {
+      const child = { ...state.child, ...action.child }
+      return {
+        ...state,
+        child,
+        activity: addActivity(state, `${child.name.split(' ')[0]}’s profile was updated`),
+      }
+    }
+    case 'set-location':
+      return { ...state, location: action.location }
+    case 'acknowledge-consent':
+      return { ...state, consentAcknowledgedAt: action.at }
+    case 'set-document-insights':
+      return {
+        ...state,
+        documents: state.documents.map((d) => (d.id === action.id ? { ...d, insights: action.insights } : d)),
       }
     case 'toggle-check': {
       const nowChecked = !state.checks[action.id]
@@ -205,7 +257,7 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
     }
     case 'add-document': {
       const doc: DocFile = {
-        id: action.id ?? `u${Date.now()}`,
+        id: action.id ?? (typeof crypto !== 'undefined' && crypto.randomUUID ? `u-${crypto.randomUUID()}` : `u${Date.now()}`),
         name: action.name,
         categoryId: action.categoryId,
         date: new Date().toLocaleDateString('en-US', {
@@ -227,6 +279,25 @@ function reducer(state: FamilyState, action: FamilyAction): FamilyState {
         ...state,
         documents: state.documents.filter((d) => d.id !== action.id),
       }
+    case 'add-goal':
+      return {
+        ...state,
+        goals: [...state.goals, action.goal],
+        activity: addActivity(state, `Added the goal “${action.goal.title}”`),
+      }
+    case 'set-goal-progress': {
+      const goal = state.goals.find((g) => g.id === action.id)
+      return {
+        ...state,
+        goals: state.goals.map((g) => (g.id === action.id ? { ...g, progress: action.progress } : g)),
+        activity:
+          goal && action.progress >= 100
+            ? addActivity(state, `Completed the goal “${goal.title}”`)
+            : state.activity,
+      }
+    }
+    case 'remove-goal':
+      return { ...state, goals: state.goals.filter((g) => g.id !== action.id) }
     case 'visit':
       return {
         ...state,
@@ -274,16 +345,33 @@ function fromServer(record: Partial<FamilyState>): FamilyState {
     ...initialState,
     ...record,
     version: VERSION,
+    child: { ...emptyChild, ...(record.child ?? {}) },
+    parent: { name: '', relationship: '', ...(record.parent ?? {}) },
+    location: { ...emptyLocation, ...(record.location ?? {}) },
+    consentAcknowledgedAt: record.consentAcknowledgedAt ?? null,
+    concerns: record.concerns ?? [],
+    checks: record.checks ?? {},
+    savedResources: record.savedResources ?? [],
+    documents: record.documents ?? [],
+    goals: record.goals ?? [],
     activity: record.activity ?? [],
     aiMemory: { ...emptyAiMemory, ...(record.aiMemory ?? {}) },
   }
 }
+
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
 
 interface FamilyContextValue {
   state: FamilyState
   dispatch: Dispatch<FamilyAction>
   /** True while the record is being loaded from the server after sign-in. */
   loading: boolean
+  /** Persistence health — surfaced so the UI can be honest about saving. */
+  saveStatus: SaveStatus
+  /** Push any unsaved changes now (call before signing out). */
+  flush: () => Promise<boolean>
+  /** Start over: clears the record AND stored documents on the server. */
+  resetRecord: () => Promise<void>
 }
 
 const FamilyContext = createContext<FamilyContextValue | null>(null)
@@ -292,9 +380,61 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth()
   const [state, dispatch] = useReducer(reducer, initialState)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const loadedRef = useRef(false)
   const visitedRef = useRef(false)
   const onboardedRef = useRef(false)
+  const updatedAtRef = useRef<string | null>(null)
+  const stateRef = useRef(state)
+  const dirtyRef = useRef(false)
+  const savingRef = useRef(false)
+  const skipPersistRef = useRef(false)
+  const retryRef = useRef<number | undefined>(undefined)
+  stateRef.current = state
+
+  /**
+   * Save the latest state. Retries automatically on failure; on a
+   * cross-device conflict, adopts the server's copy and reports it.
+   */
+  const saveNow = useCallback(async (): Promise<boolean> => {
+    if (savingRef.current) return true
+    if (!dirtyRef.current || !loadedRef.current) return true
+    savingRef.current = true
+    setSaveStatus('saving')
+    try {
+      while (dirtyRef.current) {
+        dirtyRef.current = false
+        const { updatedAt } = await apiPutFamily(stateRef.current, updatedAtRef.current)
+        updatedAtRef.current = updatedAt
+      }
+      setSaveStatus('saved')
+      return true
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        // Another device saved since we loaded. Adopt the server's copy —
+        // never overwrite it — and let the UI say so.
+        updatedAtRef.current = err.updatedAt
+        dirtyRef.current = false
+        if (err.record) {
+          skipPersistRef.current = true
+          dispatch({ type: 'hydrate', state: fromServer(err.record) })
+        }
+        setSaveStatus('conflict')
+        return false
+      }
+      dirtyRef.current = true
+      setSaveStatus('error')
+      window.clearTimeout(retryRef.current)
+      retryRef.current = window.setTimeout(() => {
+        void saveNow()
+      }, 5_000)
+      return false
+    } finally {
+      savingRef.current = false
+    }
+  }, [])
 
   // Hydrate the record from the server once the signed-in account is known.
   useEffect(() => {
@@ -305,34 +445,38 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
       loadedRef.current = false
       visitedRef.current = false
       onboardedRef.current = false
+      updatedAtRef.current = null
+      dirtyRef.current = false
+      setLoadError(null)
       dispatch({ type: 'reset' })
       setLoading(false)
       return
     }
     setLoading(true)
+    setLoadError(null)
     apiGetFamily()
-      .then((record) => {
+      .then(({ record, updatedAt }) => {
         if (cancelled) return
+        updatedAtRef.current = updatedAt
+        skipPersistRef.current = true
         dispatch(record ? { type: 'hydrate', state: fromServer(record) } : { type: 'reset' })
         // Track whether the loaded record is already onboarded, so we can
         // persist the first onboarding write immediately (see below).
         onboardedRef.current = !!record?.onboarded
-      })
-      .catch(() => {
-        if (!cancelled) {
-          dispatch({ type: 'reset' })
-          onboardedRef.current = false
-        }
-      })
-      .finally(() => {
-        if (cancelled) return
         loadedRef.current = true
+        setLoading(false)
+      })
+      .catch((err: Error) => {
+        if (cancelled) return
+        // A failed load is NOT an empty record — treating it as one would
+        // send the family back through onboarding and overwrite real data.
+        setLoadError(err.message || 'We couldn’t load your family record.')
         setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [user, authLoading])
+  }, [user, authLoading, loadAttempt])
 
   // Record this visit once, after hydration — powers "since your last visit".
   useEffect(() => {
@@ -347,21 +491,79 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   // sign-up must never lose the brand-new record. Other changes debounce.
   useEffect(() => {
     if (!user || loading || !loadedRef.current) return
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false
+      return
+    }
     const justOnboarded = state.onboarded && !onboardedRef.current
     onboardedRef.current = state.onboarded
+    dirtyRef.current = true
     if (justOnboarded) {
-      apiPutFamily(state).catch(() => {})
+      void saveNow()
       return
     }
     const handle = window.setTimeout(() => {
-      apiPutFamily(state).catch(() => {
-        // Transient failure — the next change retries; the app stays usable.
-      })
+      void saveNow()
     }, 400)
     return () => window.clearTimeout(handle)
-  }, [state, user, loading])
+  }, [state, user, loading, saveNow])
 
-  const value = useMemo(() => ({ state, dispatch, loading }), [state, loading])
+  // Last-chance flush when the tab is closing or backgrounded (best effort;
+  // keepalive requests are size-limited, so this complements — not replaces —
+  // the retry loop above).
+  useEffect(() => {
+    const flushOnHide = () => {
+      if (!dirtyRef.current || !loadedRef.current || !user) return
+      dirtyRef.current = false
+      apiPutFamily(stateRef.current, updatedAtRef.current, true)
+        .then(({ updatedAt }) => {
+          updatedAtRef.current = updatedAt
+        })
+        .catch(() => {
+          dirtyRef.current = true
+        })
+    }
+    window.addEventListener('pagehide', flushOnHide)
+    return () => window.removeEventListener('pagehide', flushOnHide)
+  }, [user])
+
+  const flush = useCallback(() => saveNow(), [saveNow])
+
+  const resetRecord = useCallback(async () => {
+    await apiResetFamily()
+    window.clearTimeout(retryRef.current)
+    dirtyRef.current = false
+    updatedAtRef.current = null
+    onboardedRef.current = false
+    skipPersistRef.current = true
+    setSaveStatus('idle')
+    dispatch({ type: 'reset' })
+  }, [])
+
+  const value = useMemo(
+    () => ({ state, dispatch, loading, saveStatus, flush, resetRecord }),
+    [state, loading, saveStatus, flush, resetRecord],
+  )
+
+  // A load failure gets an honest retry screen — never a silent reset.
+  if (user && !loading && loadError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-6 text-center">
+        <p className="text-lg font-semibold text-ink">We couldn’t load your family record</p>
+        <p className="max-w-md text-sm text-ink-soft">
+          Nothing is lost — we just couldn’t reach the server. Check your connection and try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => setLoadAttempt((n) => n + 1)}
+          className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>
 }
 

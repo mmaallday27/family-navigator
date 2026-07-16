@@ -10,7 +10,7 @@ export default {
         ink: {
           DEFAULT: '#2B2A28', // warm near-black text
           soft: '#5A564F',
-          faint: '#8C877D',
+          faint: '#6B665C', // darkened for WCAG AA on canvas/surface (was #8C877D)
         },
         line: '#EBE6DD', // soft warm border
         // Primary: calm teal — guidance, trust
@@ -57,6 +57,7 @@ export default {
           50: '#FCEFEF',
           100: '#F8D9D9',
           500: '#C2564F',
+          600: '#A84139', // deep enough for AA with white text
         },
       },
       fontFamily: {

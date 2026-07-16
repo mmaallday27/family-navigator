@@ -3,6 +3,40 @@ export interface DocCategory {
   name: string
   description: string
   color: string // tailwind text/bg accent key
+  /** Journey area the category belongs to — the Vault's information architecture. */
+  group: DocGroupId
+}
+
+export type DocGroupId = 'education' | 'clinical' | 'benefits' | 'adult-life' | 'legal' | 'family'
+
+export const docGroups: { id: DocGroupId; name: string; description: string }[] = [
+  { id: 'education', name: 'Education', description: 'IEPs, 504s, evaluations, school records' },
+  { id: 'clinical', name: 'Clinical & Developmental', description: 'Assessments, therapy, medical summaries' },
+  { id: 'benefits', name: 'Benefits & Services', description: 'SSI, Medicaid, waivers, eligibility' },
+  { id: 'adult-life', name: 'Transition & Adult Life', description: 'Vocational, employment, housing, independence' },
+  { id: 'legal', name: 'Legal & Future Planning', description: 'Decision-making, trusts, ABLE, letters of intent' },
+  { id: 'family', name: 'Family Records', description: 'Notes, correspondence, history — anything that matters' },
+]
+
+/**
+ * A grounded, plain-language digest of a document analysis — stored in the
+ * family record (so it exports and syncs) as the document's living knowledge.
+ * Server keeps the full analysis; this is the load-bearing summary.
+ */
+export interface DocumentInsights {
+  status: 'ok' | 'failed' | 'unsupported'
+  docType?: string
+  summary?: string
+  analyzedAt?: string
+  dates?: { date: string; label: string; kind: 'deadline' | 'renewal' | 'expiration' | 'meeting' | 'effective' | 'other'; verifyNote?: string }[]
+  people?: { name: string; role: string }[]
+  organizations?: string[]
+  actionItems?: string[]
+  openQuestions?: string[]
+  connections?: { area: string; note: string }[]
+  changesOrConflicts?: string[]
+  nextSteps?: string[]
+  inferenceNotes?: string
 }
 
 export interface DocFile {
@@ -15,16 +49,29 @@ export interface DocFile {
   note?: string
   /** True when real file bytes are stored on the server and downloadable. */
   hasFile?: boolean
+  /** Digest of the grounded document analysis (full copy lives server-side). */
+  insights?: DocumentInsights
 }
 
 export const docCategories: DocCategory[] = [
-  { id: 'iep', name: 'IEPs', description: 'Education plans & amendments', color: 'teal' },
-  { id: 'eval', name: 'Evaluations', description: 'Diagnostic & re-evaluations', color: 'lav' },
-  { id: 'therapy', name: 'Therapy Reports', description: 'Speech, OT, behavior', color: 'sage' },
-  { id: 'transition', name: 'Transition Plans', description: 'Goals & assessments', color: 'amber' },
-  { id: 'benefits', name: 'Benefits Paperwork', description: 'SSI, Medicaid, waivers', color: 'teal' },
-  { id: 'legal', name: 'Legal Documents', description: 'Guardianship, trusts, POA', color: 'rose' },
-  { id: 'medical', name: 'Medical Summaries', description: 'Records & medication', color: 'sage' },
+  // Education
+  { id: 'iep', name: 'IEPs & 504s', description: 'Education plans, 504 plans & amendments', color: 'teal', group: 'education' },
+  { id: 'eval', name: 'Evaluations', description: 'Diagnostic, psychoeducational & re-evaluations', color: 'lav', group: 'education' },
+  { id: 'school', name: 'School Records', description: 'Progress reports, correspondence, meeting notes', color: 'teal', group: 'education' },
+  // Clinical & Developmental
+  { id: 'therapy', name: 'Therapy Reports', description: 'Speech, OT, PT, behavior', color: 'sage', group: 'clinical' },
+  { id: 'medical', name: 'Medical Summaries', description: 'Records & medication (family-supplied)', color: 'sage', group: 'clinical' },
+  // Benefits & Services
+  { id: 'benefits', name: 'Benefits Paperwork', description: 'SSI, SSDI, Medicaid, waivers, eligibility letters', color: 'teal', group: 'benefits' },
+  // Transition & Adult Life
+  { id: 'transition', name: 'Transition Plans', description: 'Transition goals & assessments', color: 'amber', group: 'adult-life' },
+  { id: 'vocational', name: 'Vocational & Employment', description: 'Assessments, ACCES-VR, employment plans', color: 'amber', group: 'adult-life' },
+  { id: 'living', name: 'Housing & Independent Living', description: 'Residential, transportation, daily-living plans', color: 'amber', group: 'adult-life' },
+  // Legal & Future Planning
+  { id: 'legal', name: 'Legal Documents', description: 'Supported decision-making, guardianship, POA', color: 'rose', group: 'legal' },
+  { id: 'future', name: 'Future Planning', description: 'Trusts, ABLE, letters of intent, future care', color: 'rose', group: 'legal' },
+  // Family Records — the flexible home for everything else
+  { id: 'family', name: 'Family Records', description: 'Notes, letters, history — your call what belongs here', color: 'lav', group: 'family' },
 ]
 
 // Sample vault contents for the demo family. A family that onboards fresh

@@ -5,7 +5,8 @@
 
 import { journeyStages, type StageStatus } from '../data/journey'
 import { transitionTracks, type TransitionTrack } from '../data/transition'
-import type { ChildProfile, FamilyState } from './FamilyContext'
+import { supportedStates } from '../data/stateRegistry'
+import type { ChildProfile, FamilyLocation, FamilyState } from './FamilyContext'
 
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? ''
@@ -23,6 +24,70 @@ export function initials(fullName: string): string {
 /** Replace {name} tokens in content strings with the child's first name. */
 export function personalize(text: string, childName: string): string {
   return text.split('{name}').join(firstName(childName) || 'your child')
+}
+
+/**
+ * A calm, human-scale duration for a span of days — "12 days", "about 3 weeks",
+ * "about 1 month", "about 1.5 years". One shared voice, pluralized on the
+ * rounded unit count, so every screen describes time the same way.
+ */
+export function roughlyLabel(days: number): string {
+  if (days < 10) return `${days} ${days === 1 ? 'day' : 'days'}`
+  if (days < 45) {
+    const weeks = Math.round(days / 7)
+    return `about ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`
+  }
+  if (days < 365) {
+    const months = Math.round(days / 30)
+    return `about ${months} ${months === 1 ? 'month' : 'months'}`
+  }
+  const years = Math.round((days / 365) * 10) / 10
+  return `about ${years} ${years === 1 ? 'year' : 'years'}`
+}
+
+/**
+ * A human label for where the family lives — 'Rockland County, NY',
+ * 'New York' (state only), or '' when they haven't said.
+ */
+export function locationLabel(location: FamilyLocation): string {
+  if (!location.state) return ''
+  const county = location.county.trim()
+  if (!county) return supportedStates.find((s) => s.code === location.state)?.name ?? location.state
+  const countyLabel = /county/i.test(county) ? county : `${county} County`
+  return `${countyLabel}, ${location.state}`
+}
+
+// ---------------------------------------------------------------------------
+// Birth month & year options — shared by onboarding and the profile editor so
+// the birth date is always real (yyyy-mm-01), never fabricated from an age.
+// ---------------------------------------------------------------------------
+
+export const monthOptions = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+/** Birth years spanning ages 0–40, newest first. */
+export function birthYearOptions(now: Date = new Date()): number[] {
+  const current = now.getFullYear()
+  return Array.from({ length: 41 }, (_, i) => current - i)
+}
+
+/** Age today for a birth month (1–12) and year — for a live sanity check. */
+export function ageFromMonthYear(month: number, year: number, now: Date = new Date()): number {
+  let age = now.getFullYear() - year
+  if (now.getMonth() + 1 < month) age -= 1
+  return Math.max(0, age)
 }
 
 export function getAge(child: ChildProfile, now: Date = new Date()): number {

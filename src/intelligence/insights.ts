@@ -6,12 +6,14 @@
 import { journeyStages } from '../data/journey'
 import { transitionTracks } from '../data/transition'
 import { resources, type Resource } from '../data/resources'
+import { stateGuidanceFor } from '../data/stateRegistry'
 import type { FamilyState } from '../store/FamilyContext'
 import {
   currentTrack,
   firstName,
   getAge,
   personalize,
+  roughlyLabel,
   stageIdForAge,
   trackProgress,
   transitionOverview,
@@ -45,12 +47,7 @@ function birthdayInfo(state: FamilyState, years: number, now: Date) {
     date: d,
     daysAway,
     label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    roughly:
-      daysAway < 45
-        ? `${daysAway} days`
-        : daysAway < 365
-          ? `about ${Math.round(daysAway / 30)} months`
-          : `about ${Math.round((daysAway / 365) * 10) / 10} years`,
+    roughly: roughlyLabel(daysAway),
   }
 }
 
@@ -168,6 +165,37 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
   const name = firstName(state.child.name)
   const insights: Insight[] = []
 
+  // 0. State-verified milestones — when the family's state is deeply mapped,
+  // the most age-relevant milestones (within ~a year either side) surface with
+  // their source and verification date. Capped so the state layer informs the
+  // briefing without flooding it; ids are the milestone ids, so dismissing one
+  // (final filter below) keeps it dismissed.
+  const guidance = stateGuidanceFor(state.location.state)
+  const stateMilestoneInsights: Insight[] = []
+  if (guidance) {
+    const relevant = guidance.milestones
+      .filter((m) => age >= m.age - 1 && age <= m.age + 1)
+      .sort((a, b) => Math.abs(a.age - age) - Math.abs(b.age - age))
+      .slice(0, 3)
+    for (const [i, m] of relevant.entries()) {
+      const b = birthdayInfo(state, m.age, now)
+      const approaching = !!b && b.daysAway > 0
+      stateMilestoneInsights.push({
+        id: m.id,
+        kind: approaching ? 'deadline' : 'action',
+        title: `${guidance.displayName}: ${m.title}`,
+        body: `${m.action} — ${m.source.name}, verified ${m.lastVerified}.${m.verifyNote ? ` ${m.verifyNote}` : ''}`,
+        to: '/resources',
+        linkLabel: `See verified ${guidance.displayName} resources`,
+        priority: 82 - i * 2,
+        isFact: true,
+      })
+    }
+    insights.push(...stateMilestoneInsights)
+  }
+  /** A surfaced state milestone already covers this topic — skip the generic twin. */
+  const stateCovers = (re: RegExp) => stateMilestoneInsights.some((x) => re.test(x.title))
+
   // 1. Age-triggered legal deadlines (facts from the record).
   const b18 = birthdayInfo(state, 18, now)
   if (b18 && b18.daysAway > 0 && b18.daysAway <= 730) {
@@ -181,7 +209,9 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
       priority: b18.daysAway < 365 ? 95 : 80,
       isFact: true,
     })
-    if (!state.checks['c18a']) {
+    // The state's own decision-making and SSI milestones (with the state's
+    // actual law and process) supersede the generic risks when surfaced.
+    if (!state.checks['c18a'] && !stateCovers(/decision-making|guardian/i)) {
       insights.push({
         id: 'risk-no-decision-approach',
         kind: 'risk',
@@ -194,7 +224,7 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
         isFact: false,
       })
     }
-    if (!state.checks['c18b']) {
+    if (!state.checks['c18b'] && !stateCovers(/\bSSI\b/i)) {
       insights.push({
         id: 'risk-ssi-unresearched',
         kind: 'risk',
@@ -208,8 +238,10 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
       })
     }
   }
+  // The state-specific transition-planning milestone (e.g. NY's age-15 rule)
+  // supersedes the generic age-14 line when it's already surfaced.
   const b14 = birthdayInfo(state, 14, now)
-  if (b14 && b14.daysAway > 0 && b14.daysAway <= 365) {
+  if (b14 && b14.daysAway > 0 && b14.daysAway <= 365 && !stateCovers(/transition planning/i)) {
     insights.push({
       id: 'age14-approaching',
       kind: 'deadline',
@@ -221,8 +253,10 @@ export function deriveInsights(state: FamilyState, now: Date = new Date()): Insi
       isFact: true,
     })
   }
+  // The state aging-out milestone (e.g. NY's FAPE-to-22 rule) replaces the
+  // generic services-cliff line when it's already surfaced.
   const b22 = birthdayInfo(state, 22, now)
-  if (b22 && b22.daysAway > 0 && b22.daysAway <= 730 && age >= 19) {
+  if (b22 && b22.daysAway > 0 && b22.daysAway <= 730 && age >= 19 && !stateCovers(/school services|aging out/i)) {
     insights.push({
       id: 'age22-approaching',
       kind: 'deadline',

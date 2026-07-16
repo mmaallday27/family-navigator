@@ -6,24 +6,31 @@
 import type { CompanionResponse } from '../data/companion'
 import type { NavigatorFacts, NavigatorReply } from './types'
 
-let statusCache: boolean | null = null
+// Don't leave a family staring at a typing indicator — the deterministic
+// answer is already computed, so failing fast costs nothing.
+const REQUEST_TIMEOUT_MS = 20_000
 
-/** Whether a live navigator is configured (server holds an API key). Cached. */
+let statusCache: boolean | null = null
+let statusCheckedAt = 0
+const STATUS_RETRY_MS = 60_000
+
+/**
+ * Whether a live navigator is configured (server holds an API key).
+ * "Configured" is cached for the session; "not configured" is re-checked
+ * after a minute so a transient failure doesn't stick as Guided forever.
+ */
 export async function getNavigatorStatus(): Promise<boolean> {
-  if (statusCache !== null) return statusCache
+  if (statusCache === true) return true
+  if (statusCache === false && Date.now() - statusCheckedAt < STATUS_RETRY_MS) return false
   try {
     const res = await fetch('/api/navigator/status')
-    if (!res.ok) {
-      statusCache = false
-      return false
-    }
-    const data = (await res.json()) as { configured?: boolean }
+    const data = res.ok ? ((await res.json()) as { configured?: boolean }) : { configured: false }
     statusCache = !!data.configured
-    return statusCache
   } catch {
     statusCache = false
-    return false
   }
+  statusCheckedAt = Date.now()
+  return statusCache
 }
 
 /**
@@ -41,6 +48,7 @@ export async function askNavigator(payload: {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!res.ok) return null
     const data = (await res.json()) as NavigatorReply
