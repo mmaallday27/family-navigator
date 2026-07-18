@@ -48,16 +48,53 @@ app.use((_req, res, next) => {
 
 // Cross-origin write protection (defense in depth on top of SameSite=Lax):
 // browsers send an Origin header on cross-site requests — reject any mutating
-// request whose Origin is present and not our own host.
+// request whose Origin is present and not one we trust.
+//
+// A single-process deploy is same-origin (Origin.host === req.headers.host), but
+// that comparison breaks the moment a proxy sits in front: the Vite dev server
+// proxies /api here with changeOrigin, rewriting Host to the backend while the
+// browser's Origin stays as the dev server (localhost, or a LAN IP when testing
+// on a phone); a production reverse proxy likewise presents a public Origin over
+// an internal Host. So we accept: (1) the request's own Host, (2) any origin
+// listed in TRUSTED_ORIGINS, and (3) in development only, loopback / private-LAN
+// origins so mobile testing works without configuration.
+const isProd = process.env.NODE_ENV === 'production'
+const trustedOrigins = new Set(
+  (process.env.TRUSTED_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+)
+
+// Loopback or RFC 1918 private-network host — the addresses a dev machine and
+// phones on the same Wi-Fi actually use. Never trusted in production.
+function isLocalHostname(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '::1') return true
+  if (/^127\./.test(hostname)) return true
+  if (/^10\./.test(hostname)) return true
+  if (/^192\.168\./.test(hostname)) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true
+  return false
+}
+
+function originIsTrusted(origin: string, host: string | undefined): boolean {
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    return false // malformed Origin
+  }
+  if (host && url.host === host) return true
+  if (trustedOrigins.has(url.origin)) return true
+  if (!isProd && isLocalHostname(url.hostname)) return true
+  return false
+}
+
 app.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next()
   const origin = req.headers.origin
   if (!origin) return next() // same-origin fetch/curl — no Origin header
-  try {
-    if (new URL(origin).host === req.headers.host) return next()
-  } catch {
-    // Malformed Origin falls through to rejection.
-  }
+  if (originIsTrusted(origin, req.headers.host)) return next()
   res.status(403).json({ error: 'Cross-origin request rejected.' })
 })
 
