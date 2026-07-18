@@ -368,23 +368,51 @@ export default function Dashboard() {
 
       {/* Child profile + current stage */}
       <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <div className="flex items-start gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-teal-100 text-xl font-semibold text-teal-700">
+        {/* Not <Card>: mobile trims the padding to 16px (p-4) to reclaim width,
+            while desktop keeps the roomier p-5. A 3-column grid puts avatar /
+            identity / Edit in a compact header row, then lets the profile content
+            span the full card width on phones (col-span-3) yet sit beside the
+            avatar on tablet/desktop (sm:col-start-2) — preserving the wide layout. */}
+        <div className="card p-4 sm:p-5 lg:col-span-2">
+          <div className="grid grid-cols-[auto_1fr_auto] items-start gap-x-3 gap-y-3 sm:gap-x-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-100 text-lg font-semibold text-teal-700 sm:h-16 sm:w-16 sm:text-xl">
               {initials(child.name)}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h2 className="section-title text-xl font-semibold">{child.name}</h2>
+
+            {/* Identity — name, age, grade. min-w-0 lets the name wrap/truncate
+                instead of shoving the Edit control off the row. */}
+            <div className="min-w-0 self-center sm:self-start">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h2 className="section-title min-w-0 break-words text-lg font-semibold sm:text-xl">{child.name}</h2>
                 <span className="text-sm text-ink-faint">
                   {[`age ${age}`, child.schoolGrade].filter(Boolean).join(' · ')}
                 </span>
+                {/* Location rides in the header on desktop only; on mobile it moves
+                    into the full-width content below (see sm:hidden copy). */}
                 {locLabel && (
-                  <span className="inline-flex items-center gap-1 text-sm text-ink-faint">
+                  <span className="hidden items-center gap-1 text-sm text-ink-faint sm:inline-flex">
                     <MapPin className="h-3.5 w-3.5" /> {locLabel}
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Edit lives in its own grid column, so it can never collide with the name. */}
+            <button
+              onClick={() => setEditingChild(true)}
+              className="btn-ghost -mr-1 shrink-0 whitespace-nowrap text-ink-faint hover:text-ink-soft"
+              aria-label={`Edit ${childFirst}’s profile`}
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+
+            {/* Full-width content on mobile; indented beside the avatar on desktop. */}
+            <div className="col-span-3 min-w-0 sm:col-span-2 sm:col-start-2">
+              {locLabel && (
+                <p className="flex items-center gap-1 text-sm text-ink-faint sm:hidden">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" /> {locLabel}
+                </p>
+              )}
               {child.diagnosis && (
                 <p className="mt-1 text-sm text-ink-soft">
                   {child.diagnosis}
@@ -394,25 +422,37 @@ export default function Dashboard() {
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Strengths</p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {/* Two tags per row on normal phones (repeat(2, minmax(0,1fr))),
+                      one column under ~360px, natural flex-wrap on desktop. */}
+                  <div className="mt-1.5 grid grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 sm:flex sm:flex-wrap">
                     {child.strengths.length > 0 ? (
                       child.strengths.map((s) => (
-                        <span key={s} className="chip bg-sage-50 text-sage-600">{s}</span>
+                        <span
+                          key={s}
+                          className="chip w-full min-w-0 justify-start whitespace-normal break-words bg-sage-50 text-left text-sage-600 sm:w-auto"
+                        >
+                          {s}
+                        </span>
                       ))
                     ) : (
-                      <span className="text-xs text-ink-faint">Add strengths as you notice them — they lead the planning here.</span>
+                      <span className="col-span-full text-xs text-ink-faint">Add strengths as you notice them — they lead the planning here.</span>
                     )}
                   </div>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Interests</p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-1.5 grid grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 sm:flex sm:flex-wrap">
                     {child.interests.length > 0 ? (
                       child.interests.map((s) => (
-                        <span key={s} className="chip bg-amber-50 text-amber-600">{s}</span>
+                        <span
+                          key={s}
+                          className="chip w-full min-w-0 justify-start whitespace-normal break-words bg-amber-50 text-left text-amber-600 sm:w-auto"
+                        >
+                          {s}
+                        </span>
                       ))
                     ) : (
-                      <span className="text-xs text-ink-faint">What does {childFirst} love? Interests point toward the future.</span>
+                      <span className="col-span-full text-xs text-ink-faint">What does {childFirst} love? Interests point toward the future.</span>
                     )}
                   </div>
                 </div>
@@ -423,15 +463,8 @@ export default function Dashboard() {
                 </p>
               )}
             </div>
-            <button
-              onClick={() => setEditingChild(true)}
-              className="btn-ghost -mr-2 -mt-1 shrink-0 text-ink-faint hover:text-ink-soft"
-              aria-label={`Edit ${childFirst}’s profile`}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </button>
           </div>
-        </Card>
+        </div>
 
         <Modal
           open={editingChild}
